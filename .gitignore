@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+.DS_Store
+.notebook/
+.claude/
+# Données personnelles : publications modifiées, notes, photos, statistiques importées
+data/personnel/
+# Copies de sauvegarde locales
+data/*-avant-*
+
+# Secrets : adresse de la base, clés API. Jamais sur GitHub.
+.streamlit/secrets.toml
+
+# Documents et sauvegardes personnels : restent sur cet ordinateur
+mes-documents/

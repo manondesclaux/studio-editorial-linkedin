@@ -1,0 +1,9 @@
+streamlit>=1.45,<2
+pandas>=2.2,<3
+Pillow>=10.4,<13
+openpyxl>=3.1,<4
+# Connexion à l’IA (amélioration et conversation de l’Assistant LinkedIn)
+anthropic>=1.17,<2
+
+# Base en ligne (Supabase / Postgres), utilisée quand DATABASE_URL est défini
+psycopg[binary]>=3.2,<4

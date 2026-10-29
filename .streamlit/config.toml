@@ -1,0 +1,19 @@
+[theme]
+primaryColor = "#6B4A33"
+backgroundColor = "#F4EEE4"
+secondaryBackgroundColor = "#E2D3BD"
+textColor = "#1C1A17"
+font = "sans serif"
+# Liens et encadrés « info » dans les couleurs de la marque : aucun bleu
+linkColor = "#6B4A33"
+linkUnderline = true
+blueColor = "#6B4A33"
+blueBackgroundColor = "#E2D3BD"
+blueTextColor = "#4A3222"
+chartCategoricalColors = ["#6B4A33", "#1C1A17", "#B08F6E", "#D8C3A5"]
+[server]
+address = "127.0.0.1"
+headless = true
+maxUploadSize = 10
+[browser]
+gatherUsageStats = false
