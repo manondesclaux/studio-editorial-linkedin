@@ -1,1 +1,1 @@
-{"version":"2.0.0","tasks":[{"label":"Lancer le studio éditorial","type":"process","command":"${workspaceFolder}/.venv/bin/python","args":["-m","streamlit","run","app.py"],"options":{"cwd":"${workspaceFolder}"},"problemMatcher":[]}]}
+{"version":"2.0.0","tasks":[{"label":"Lancer le studio éditorial","type":"process","command":"${userHome}/.venvs/studio-editorial/bin/python","args":["-m","streamlit","run","app.py"],"options":{"cwd":"${workspaceFolder}"},"problemMatcher":[]}]}

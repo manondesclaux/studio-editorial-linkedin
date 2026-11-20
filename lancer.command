@@ -1,10 +1,12 @@
 #!/bin/zsh
 cd -- "${0:A:h}"
-if [[ ! -x .venv/bin/python ]]; then
-  python3 -m venv .venv || exit 1
+# L'environnement Python vit hors du dossier Desktop (synchronisé iCloud, qui bloquait les imports)
+VENV="${STUDIO_VENV:-$HOME/.venvs/studio-editorial}"
+if [[ ! -x "$VENV/bin/python" ]]; then
+  python3 -m venv "$VENV" || exit 1
 fi
-if ! .venv/bin/python -c 'import streamlit' 2>/dev/null; then
-  .venv/bin/python -m pip install -r requirements.txt || exit 1
+if ! "$VENV/bin/python" -c 'import streamlit, defusedxml' 2>/dev/null; then
+  "$VENV/bin/python" -m pip install -r requirements.txt || exit 1
 fi
 (sleep 4 && open http://127.0.0.1:8501) &
-.venv/bin/python -m streamlit run app.py --server.address=127.0.0.1 --server.headless=true
+"$VENV/bin/python" -m streamlit run app.py --server.address=127.0.0.1 --server.headless=true
