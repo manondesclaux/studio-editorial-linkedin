@@ -59,6 +59,16 @@ LINKEDIN_CLIENT_SECRET = "…"
 APP_URL = "https://studio-prenom-nom.streamlit.app"
 ```
 
+## Protéger le studio (à faire avant de le partager)
+
+Le studio peut publier sur votre LinkedIn : ne le laissez pas ouvert à tous. Ajoutez dans les secrets de l’application (Settings → Secrets) :
+
+```toml
+APP_PASSWORD = "une phrase longue et unique"
+```
+
+Le studio demande alors ce mot de passe à l’ouverture (5 essais ratés = blocage de 5 minutes). Gardez aussi le réglage **Only specific people can view this app**. Le studio active lui-même la protection RLS sur vos tables Supabase, et les sauvegardes ZIP ne contiennent jamais votre jeton LinkedIn.
+
 ## 5. Le studio sur l’écran d’accueil de l’iPhone
 
 1. Ouvrez l’adresse de votre application dans **Safari** et connectez-vous.

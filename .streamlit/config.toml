@@ -15,5 +15,7 @@ chartCategoricalColors = ["#6B4A33", "#1C1A17", "#B08F6E", "#D8C3A5"]
 address = "127.0.0.1"
 headless = true
 maxUploadSize = 10
+enableXsrfProtection = true
+enableCORS = true
 [browser]
 gatherUsageStats = false

@@ -1,7 +1,9 @@
 streamlit>=1.45,<2
 pandas>=2.2,<3
-Pillow>=10.4,<13
+Pillow>=13.0,<14
 openpyxl>=3.1,<4
+# Lecture sécurisée des fichiers XLSX importés (protège contre les XML piégés)
+defusedxml>=0.7,<1
 # Connexion à l’IA (amélioration et conversation de l’Assistant LinkedIn)
 anthropic>=1.17,<2
 

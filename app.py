@@ -1,9 +1,11 @@
 """Lancer avec : python -m streamlit run app.py"""
 import calendar
 import csv
+import hmac
 import io
 import json
 import re
+import time as _time
 from datetime import date, datetime, time, timedelta
 from html import escape
 from urllib.parse import urlencode
@@ -12,7 +14,7 @@ import os
 import streamlit as st
 # En ligne, les secrets (base de données, clé API) arrivent par st.secrets ; le stockage les lit dans l’environnement
 try:
-    for _k in ('DATABASE_URL','ANTHROPIC_API_KEY','GITHUB_TOKEN','LINKEDIN_CLIENT_ID','LINKEDIN_CLIENT_SECRET','APP_URL'):
+    for _k in ('DATABASE_URL','ANTHROPIC_API_KEY','GITHUB_TOKEN','LINKEDIN_CLIENT_ID','LINKEDIN_CLIENT_SECRET','APP_URL','APP_PASSWORD'):
         if _k in st.secrets and not os.environ.get(_k): os.environ[_k]=str(st.secrets[_k])
 except Exception:
     pass
@@ -22,6 +24,30 @@ import redacteur as rd
 import storage as db
 
 st.set_page_config(page_title='Studio éditorial', page_icon='✦', layout='wide')
+
+
+@st.cache_resource
+def _login_failures():
+    return []
+
+
+def require_password():
+    """Mot de passe facultatif (APP_PASSWORD) : indispensable dès que le studio est en ligne, car il peut publier sur LinkedIn."""
+    expected=os.environ.get('APP_PASSWORD')
+    if not expected or st.session_state.get('auth_ok'): return
+    st.title('✦ Studio éditorial')
+    with st.form('login'):
+        given=st.text_input('Mot de passe',type='password')
+        entered=st.form_submit_button('Entrer',type='primary')
+    if entered:
+        now=_time.time(); failures=_login_failures(); failures[:]=[t for t in failures if now-t<300]
+        if len(failures)>=5: st.error('Trop d’essais. Réessayez dans quelques minutes.')
+        elif hmac.compare_digest(given.encode(),expected.encode()): st.session_state['auth_ok']=True; st.rerun()
+        else: failures.append(now); st.error('Mot de passe incorrect.')
+    st.stop()
+
+
+require_password()
 db.init()
 # Identité de marque : beige clair, beige foncé, marron, noir, blanc
 st.markdown('''<style>
@@ -89,7 +115,7 @@ def idea_to_post(idea):
 if st.query_params.get('state') and (st.query_params.get('code') or st.query_params.get('error')):
     expected=db.get_meta('linkedin_state')
     if st.query_params.get('error'): st.session_state['notice']='Connexion LinkedIn annulée.'
-    elif not expected or st.query_params['state']!=expected: st.session_state['notice']='Connexion LinkedIn refusée : lien expiré ou invalide. Recommencez depuis l’onglet Mon compte LinkedIn.'
+    elif not expected or not hmac.compare_digest(str(st.query_params['state']).encode(),str(expected).encode()): st.session_state['notice']='Connexion LinkedIn refusée : lien expiré ou invalide. Recommencez depuis l’onglet Mon compte LinkedIn.'
     else:
         try:
             token=li.exchange(st.query_params['code']); info=li.userinfo(token['access_token'])
@@ -118,6 +144,8 @@ page=st.query_params.get('page',PAGES[0])
 if page not in PAGES: page=PAGES[0]
 with st.sidebar:
     st.title('✦ Studio éditorial')
+    if db.online() and not os.environ.get('APP_PASSWORD'):
+        st.warning('Studio en ligne sans mot de passe : ajoutez APP_PASSWORD dans les secrets (voir MISE-EN-LIGNE.md).')
     st.caption(' · '.join(x for x in [profile.get('name',''),' / '.join(profile.get('metiers',[]))] if x) or 'Complétez votre profil dans Personnalisation')
     for nav in PAGES:
         if st.button(nav,width='stretch',type='primary' if page==nav else 'secondary'):
@@ -547,7 +575,7 @@ elif page=='Contenus consommés':
     for c in chosen:
         used=[i for i in ideas if i.get('content_id')==c['id']]
         with st.container(border=True):
-            st.markdown(f"**{ICONS.get(c['kind'],'')} {escape(c['title'])}** · {escape(c['author'])}"+(f" · [ouvrir]({c['url']})" if c.get('url') else ''))
+            st.markdown(f"**{ICONS.get(c['kind'],'')} {escape(c['title'])}** · {escape(c['author'])}"+(f" · [ouvrir]({db.md_url(c['url'])})" if c.get('url') else ''))
             st.caption(f"{c['kind']} · {c.get('date') or 'date à compléter'} · {db.PILLARS[c['pillar']]} · {len(used)} idée(s) tirée(s)")
             if c['takeaways']: st.write(c['takeaways'])
             if c['quote']: st.markdown('> '+c['quote'])
@@ -592,7 +620,7 @@ elif page=='GitHub':
             pillars,topics,results=db.repo_insights(repo,research['opportunites'])
             linked=[i for i in ideas if i.get('repo')==repo['full_name']]
             with st.container(border=True):
-                st.markdown(f"**[{escape(repo['name'])}]({repo['url']})**"+(' · privé' if repo['private'] else ''))
+                st.markdown(f"**[{escape(repo['name'])}]({db.md_url(repo['url'])})**"+(' · privé' if repo['private'] else ''))
                 st.caption(' · '.join(x for x in [repo['language'],'mis à jour le '+repo['pushed_at'],' / '.join(db.PILLARS[k] for k in pillars),f'{len(linked)} idée(s) notée(s)'] if x))
                 if repo['description']: st.write(repo['description'])
                 if results:

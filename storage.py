@@ -4,10 +4,12 @@ En local : SQLite dans data/personnel. En ligne : Postgres (Supabase), dès que 
 """
 import hashlib
 import io
+import ipaddress
 import json
 import csv
 import os
 import re
+import socket
 import sqlite3
 import threading
 import urllib.error
@@ -30,6 +32,8 @@ IDEA_STATUSES = ['Brouillon', 'À retravailler', 'Prête à rédiger', 'Transfor
 CONTENT_TYPES = ['Podcast', 'Livre', 'Article', 'Vidéo', 'Newsletter', 'Conférence', 'Formation']
 # ideas : idées de posts · contents : contenus consommés · linkedin : statistiques importées
 ITEM_TABLES = ('ideas', 'contents', 'linkedin')
+# Réglages qui contiennent un secret : exclus des sauvegardes
+SECRET_META = ('linkedin_auth', 'linkedin_state')
 PILLAR_KEYWORDS = {
     'A': ['décision', 'métrique', 'prévision', 'prévoir', 'priorisation', 'segmentation', 'hypothèse', 'kpi', 'engagement', 'succès', 'arbitrage', 'recommandation'],
     'B': ['client', 'clients', 'utilisateur', 'utilisateurs', 'parcours', 'expérience', 'design', 'interface', 'satisfaction', 'ux', 'usage'],
@@ -60,7 +64,10 @@ class _Postgres:
                     if _Postgres.con is None or _Postgres.con.closed:
                         import psycopg
                         from psycopg.rows import dict_row
-                        _Postgres.con = psycopg.connect(os.environ['DATABASE_URL'], row_factory=dict_row, autocommit=True, prepare_threshold=None, connect_timeout=15)
+                        url = os.environ['DATABASE_URL']
+                        if 'sslmode=' not in url and urlparse(url).hostname not in ('localhost', '127.0.0.1', '::1'):
+                            url += ('&' if '?' in url else '?') + 'sslmode=require'  # connexion toujours chiffrée
+                        _Postgres.con = psycopg.connect(url, row_factory=dict_row, autocommit=True, prepare_threshold=None, connect_timeout=15)
                     cur = _Postgres.con.execute(sql, params)
                     return _Rows(cur.fetchall() if cur.description else [])
                 except Exception as e:
@@ -83,8 +90,12 @@ def online():
 def connect():
     if online():
         return _Postgres()
-    DATA.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(DATA / 'studio.sqlite3', timeout=20)
+    DATA.mkdir(parents=True, exist_ok=True, mode=0o700)
+    base = DATA / 'studio.sqlite3'
+    new = not base.exists()
+    con = sqlite3.connect(base, timeout=20)
+    if new:
+        os.chmod(base, 0o600)  # base locale lisible par vous seul
     con.row_factory = sqlite3.Row
     return con
 
@@ -117,6 +128,11 @@ def init():
         c.execute('CREATE TABLE IF NOT EXISTS photos (id TEXT PRIMARY KEY, data BLOB NOT NULL)')
         for table in ITEM_TABLES:
             c.execute(f'CREATE TABLE IF NOT EXISTS {table} (id TEXT PRIMARY KEY, payload TEXT NOT NULL)')
+        if online():
+            # Supabase expose le schéma public par son API : sans RLS, la clé publique « anon » lirait et modifierait ces tables.
+            # Le studio se connecte avec le rôle postgres, qui n’est pas soumis à la RLS : rien ne change pour lui.
+            for table in ('posts', 'meta', 'accounts', 'photos', *ITEM_TABLES):
+                c.execute(f'ALTER TABLE {table} ENABLE ROW LEVEL SECURITY')
         if not c.execute("SELECT 1 FROM meta WHERE key='seeded_v2'").fetchone() and (ROOT / 'data/amorce.json').exists():
             for table, rows in json.loads((ROOT / 'data/amorce.json').read_text()).items():
                 for row in rows:
@@ -208,7 +224,8 @@ def backup():
             z.writestr(table+'.json',json.dumps(items(table),ensure_ascii=False,indent=2))
         z.writestr('favoris-et-notes.json',json.dumps(accounts(),ensure_ascii=False,indent=2))
         with connect() as c:
-            z.writestr('reglages.json',json.dumps({r['key']:r['value'] for r in c.execute('SELECT key,value FROM meta')},ensure_ascii=False,indent=2))
+            # Jamais de jeton ni d’état de connexion dans une sauvegarde : le fichier peut être partagé ou perdu.
+            z.writestr('reglages.json',json.dumps({r['key']:r['value'] for r in c.execute('SELECT key,value FROM meta') if r['key'] not in SECRET_META},ensure_ascii=False,indent=2))
             for r in c.execute('SELECT id,data FROM photos'):
                 z.writestr('photos/'+r['id'],bytes(r['data']))
         if not online():
@@ -216,6 +233,7 @@ def backup():
             snap=sqlite3.connect(':memory:')
             with connect() as c:
                 c.backup(snap)
+            snap.execute('DELETE FROM meta WHERE key IN (%s)' % ','.join('?'*len(SECRET_META)), SECRET_META)
             z.writestr('studio.sql','\n'.join(snap.iterdump())); snap.close()
         z.write(ROOT/'data/recherche.json','recherche.json')
     return out.getvalue()
@@ -434,9 +452,39 @@ def repo_insights(repo, opportunities):
 
 # --- Lien partagé depuis YouTube, Spotify, Apple Podcasts ou un article ---
 
+def _check_public(url):
+    """Refuse tout lien qui ne mène pas à un site public (réseau local, localhost, métadonnées cloud…)."""
+    parts=urlparse(url)
+    if parts.scheme not in ('http','https') or not parts.hostname:
+        raise ValueError('Lien non autorisé.')
+    try:
+        addresses={a[4][0] for a in socket.getaddrinfo(parts.hostname, parts.port or (443 if parts.scheme=='https' else 80), type=socket.SOCK_STREAM)}
+    except socket.gaierror as e:
+        raise ValueError('Adresse introuvable.') from e
+    for a in addresses:
+        if not ipaddress.ip_address(a.split('%')[0]).is_global:
+            raise ValueError('Lien non autorisé : adresse non publique.')
+
+
+class _PublicRedirects(urllib.request.HTTPRedirectHandler):
+    """Revérifie chaque redirection : un site public ne doit pas pouvoir renvoyer vers le réseau local."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _check_public(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_OPENER=urllib.request.build_opener(_PublicRedirects)
+
+
+def md_url(url):
+    """Adresse sûre à placer dans un lien Markdown [texte](adresse)."""
+    return (url or '').strip().replace(' ','%20').replace('(','%28').replace(')','%29').replace('<','%3C').replace('>','%3E')
+
+
 def _fetch(url, as_json=False):
+    _check_public(url)
     req=urllib.request.Request(url, headers={'User-Agent':'Mozilla/5.0 (studio-editorial)','Accept-Language':'fr-FR,fr;q=0.9'})
-    with urllib.request.urlopen(req, timeout=10) as r:
+    with _OPENER.open(req, timeout=10) as r:
         raw=r.read(600_000).decode('utf-8','replace')
     return json.loads(raw) if as_json else raw
 
