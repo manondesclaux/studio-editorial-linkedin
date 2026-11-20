@@ -331,6 +331,9 @@ elif page=='Assistant LinkedIn':
         if skill=='li-plan': text+='\n\n## Idées en attente\n'+'\n'.join(f"- {i['title']} ({db.PILLARS[i['pillar']]})" for i in ideas if i['status'] in db.IDEA_STATUSES[:3])
         prof='\n'.join(f'- {label} : {", ".join(v) if isinstance(v,list) else v}' for label,v in [('Nom',profile.get('name')),('Métiers',profile.get('metiers')),('Centres d’intérêt',profile.get('interests')),('Compétences professionnelles',profile.get('skills_pro')),('Compétences personnelles',profile.get('skills_perso')),('Présentation',profile.get('presentation')),('Résultats attendus',profile.get('objectives')),('Public visé',profile.get('audience')),('Piliers',list(db.PILLARS.values()))] if v)
         text+='\n\n## Profil (onglet Personnalisation)\n'+(prof or 'Non renseigné.')
+        refs=[p for p in all_posts if p['status']=='Publié' and p['body'].strip()][-3:]
+        if skill in ai.PERSONAL_WRITING and refs:
+            text+='\n\n## Posts déjà publiés (références de style, ne pas recopier leurs faits)\n\n'+'\n\n---\n\n'.join(p['body'][:2500] for p in refs)
         if attached: text+='\n\n## Éléments joints par l’utilisateur\n\n'+'\n\n'.join(pool[k][1] for k in attached)
         return text
 
@@ -382,10 +385,53 @@ elif page=='Assistant LinkedIn':
     api_key=st.session_state.get('anthropic_key') or None
     ready=ai.has_sdk() and (ai.key_from_env() or bool(api_key))
     NO_KEY='Ajoutez votre clé API Anthropic dans « Connexion à l’IA » en haut de la page.'
-    t_guide,t_chat,t_check,t_voice=st.tabs(['✍️ Rédacteur guidé','💬 Conversation IA','🔎 Vérifier un texte','🗣️ Profil de voix'])
+    t_story,t_guide,t_chat,t_check,t_voice=st.tabs(['📖 Récit d’expérience','✍️ Formules d’accroche','💬 Conversation IA','🔎 Vérifier un texte','🗣️ Profil de voix'])
+
+    with t_story:
+        st.caption('La méthode du skill redaction-post-linkedin : partir d’une expérience vécue pour montrer votre regard produit. Racontez les faits dans l’ordre ; le studio assemble le post, le vérifie selon le skill et le note avec li-human. Rien n’est inventé.')
+        data={}
+        for k,(label,help_) in rd.STORY_FIELDS.items():
+            widget=st.text_area if k in ('declencheur','reponses','consequences','competence','regard','nuance','propositions') else st.text_input
+            data[k]=widget(label+(' *' if k in rd.STORY_REQUIRED else ''),key='story-'+k,placeholder=help_)
+        missing=[rd.STORY_FIELDS[k][0].split(' :')[0].split(' (')[0] for k in rd.STORY_REQUIRED if not data[k].strip()]
+        if missing:
+            st.info('À compléter pour obtenir le post : '+', '.join(missing)+'.')
+        else:
+            raw=rd.compose_story(data)
+            try:
+                clean=ai.humanize(raw); score=ai.detect(clean['text']); final=clean['text']
+            except RuntimeError: final,score,clean=raw,None,None
+            text=st.text_area('Votre post, modifiable avant de le garder',final,height=420,key='story-final-'+str(hash(final)))
+            c1,c2=st.columns(2)
+            c1.metric('Mots',len(re.findall(r"[\w’'-]+",re.sub(r'#\w+','',text))))
+            if score: c2.metric('Score humain (li-human)',f"{score['human_score']:.0f}/100",score['verdict'],delta_color='off')
+            st.markdown('**Contrôle avant livraison**')
+            for level,msg in rd.story_checks(text,data): (st.caption if level=='ok' else st.warning)(('✓ ' if level=='ok' else '')+msg)
+            for f in (clean or {}).get('report',{}).get('structures',[]): st.warning(f"{f['name']} : {f['fix']}")
+            save_buttons(text,'story','récit d’expérience')
+            st.subheader('Améliorer avec l’IA')
+            st.caption('L’IA réécrit ce récit avec votre skill redaction-post-linkedin et vos posts déjà publiés comme références de style, sans toucher aux faits. Le résultat repasse par le même contrôle.')
+            story_key='story-ai-'+str(hash(text))
+            if st.button('✨ Améliorer le récit',type='primary',disabled=not ready,help=None if ready else NO_KEY):
+                try:
+                    st.session_state[story_key]=st.write_stream(ai.stream('redaction-post-linkedin',[dict(role='user',content=ai.improve_story_request(text,data))],studio_context('redaction-post-linkedin',[]),model,api_key))
+                    st.rerun()
+                except Exception as e: st.error(ai.explain(e))
+            if not ready: st.caption(NO_KEY)
+            if st.session_state.get(story_key):
+                answer=st.session_state[story_key]
+                for b,(label,version) in enumerate(ai.blocks(answer)):
+                    with st.container(border=True):
+                        st.markdown(f'**Version améliorée · {label}**')
+                        st.code(version,language=None,wrap_lines=True)
+                        for level,msg in rd.story_checks(version,data): (st.caption if level=='ok' else st.warning)(('✓ ' if level=='ok' else '')+msg)
+                        save_buttons(version,f'story-ai-{b}','récit d’expérience + IA')
+                notes=re.sub(r'```.*?```','',answer,flags=re.S).strip()
+                if notes:
+                    with st.expander('Choix faits par l’IA'): st.markdown(notes)
 
     with t_guide:
-        st.caption('Donnez la matière : le studio propose les accroches adaptées parmi les 21 formules de li-post, assemble le post dans la bonne structure, puis le nettoie et le note avec li-human. Rien n’est inventé : chaque phrase vient de vos réponses.')
+        st.caption('Pour un post court construit sur une accroche forte. Donnez la matière : le studio propose les accroches adaptées parmi les 21 formules de li-post, assemble le post dans la bonne structure, puis le nettoie et le note avec li-human. Rien n’est inventé : chaque phrase vient de vos réponses.')
         starts={'':'Partir d’une page blanche'}
         for i in ideas: starts['idea:'+i['id']]='Idée · '+i['title']
         for c in contents: starts['content:'+c['id']]=content_label[c['id']]

@@ -1,9 +1,6 @@
 ---
-noteId: "0d395b60e51611f182a03174c550fedc"
-tags: []
 name: "redaction-post-linkedin"
 description: "Rédiger un post LinkedIn à partir d'une expérience personnelle pour mettre en avant ses compétences produit, son regard business et son expertise. À utiliser pour tout post LinkedIn."
-
 ---
 
 # Rédaction de posts LinkedIn

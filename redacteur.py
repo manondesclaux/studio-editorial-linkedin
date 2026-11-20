@@ -153,3 +153,73 @@ def proofs(voice_text):
     m = re.search(r'## Proof I can use\s*(.*?)(\n## |\Z)', voice_text or '', flags=re.S)
     found = [l.strip('- ').strip() for l in (m.group(1) if m else '').splitlines() if l.strip().startswith('-')]
     return [p for p in found if p and not p.startswith('(')]  # ignore les consignes du modèle
+
+
+# --- Récit d’expérience : la méthode du skill redaction-post-linkedin, sans IA ---
+
+STORY_FIELDS = {
+    'accroche': ('Accroche : une question ou un paradoxe concret', 'Ex. : Rendez-vous annulé, ou rendez-vous oublié ?'),
+    'declencheur': ('Le fait déclencheur, en une phrase', 'Ex. : Mon rendez-vous a été annulé la veille, sans explication.'),
+    'reponses': ('Les réponses obtenues', 'Ce qu’on vous a répondu, dans l’ordre. Ex. : Le service client m’a renvoyée vers le formulaire en ligne.'),
+    'consequences': ('Les conséquences pour vous', 'Ex. : Trois semaines d’attente pour un nouveau créneau.'),
+    'enjeu': ('L’enjeu, en une phrase (facultatif)', 'Ex. : Je ne cherche pas un coupable. Je cherche une solution.'),
+    'competence': ('La compétence transférable de votre autre métier', 'Ex. : En gestion de projet, on prévient avant de décaler un jalon et on propose une alternative.'),
+    'regard': ('Votre regard produit (facultatif)', 'Ex. : C’est quand le parcours déraille qu’on voit s’il a été pensé.'),
+    'nuance': ('La nuance : ce que l’outil ou le processus apporte', 'Ex. : La prise de rendez-vous en ligne fait gagner du temps à tout le monde.'),
+    'propositions': ('Vos propositions concrètes (une par ligne)', 'Ex. : prévenir par SMS avec trois nouveaux créneaux en un clic'),
+    'these': ('La phrase de thèse', 'Ex. : Un parcours se juge sur ses exceptions.'),
+    'question': ('La question ouverte finale', 'Ex. : Vos parcours sont-ils pensés pour les cas où tout se passe mal ?'),
+    'hashtags': ('Hashtags (3 maximum)', 'Ex. : #ExpérienceClient #GestionDeProduit'),
+}
+STORY_REQUIRED = ('accroche', 'declencheur', 'competence', 'nuance', 'propositions', 'these', 'question')
+# Mots avec majuscule autorisés en milieu de phrase (sigles et noms d’outils génériques)
+_COMMON_CAPS = {'IA', 'SMS', 'LinkedIn', 'B2B', 'B2C', 'PM', 'PO', 'UX', 'UI', 'KPI', 'CRM', 'SaaS', 'API', 'MVP', 'RGPD', 'France', 'Je', 'Product', 'Owner', 'Manager'}
+
+
+def compose_story(data):
+    """Structure du skill : accroche, problème et conséquences, compétence transférable, regard produit,
+    nuance, propositions concrètes, thèse puis question ouverte."""
+    get = lambda k: _end(_cap(_clean(data.get(k, ''))))
+    props = [_clean(p).strip(' -•▸→').rstrip('.') for p in data.get('propositions', '').splitlines() if _clean(p).strip(' -•▸→')]
+    parts = [_clean(data.get('accroche', ''))]
+    parts.append(' '.join(x for x in (get('declencheur'), get('consequences')) if x))
+    parts += [get('reponses'), get('enjeu'), get('competence'), get('regard'), get('nuance')]
+    if props:
+        words = ['un garde-fou', 'deux garde-fous', 'trois garde-fous', 'quatre garde-fous', 'cinq garde-fous']
+        intro = f'Si je devais concevoir ce parcours, je prévoirais {words[min(len(props), 5) - 1]}.'
+        if len(props) <= 3:
+            ordinals = (['D’abord', 'Ensuite', 'Enfin'] if len(props) == 3 else ['D’abord', 'Ensuite'])[:len(props)]
+            body = ' '.join(f'{o}, {_low(p)}.' for o, p in zip(ordinals, props)) if len(props) > 1 else _end(_cap(props[0]))
+            parts.append(intro + ' ' + body)
+        else:
+            parts.append(intro + '\n' + '\n'.join('- ' + _end(_cap(p)) for p in props))
+    parts += [get('these'), _end(_cap(_clean(data.get('question', ''))), ' ?') if data.get('question', '').strip() else '']
+    tags = re.findall(r'#\w+', data.get('hashtags', ''))[:3]
+    if tags:
+        parts.append(' '.join(tags))
+    return '\n\n'.join(p for p in parts if p)
+
+
+def story_checks(text, data):
+    """Le « contrôle avant livraison » du skill redaction-post-linkedin."""
+    body = re.sub(r'#\w+', '', text)
+    words = len(re.findall(r"[\w’'-]+", body))
+    notes = [('ok' if 250 <= words <= 300 else 'warn', f'{words} mots (longueur visée par le skill : 250 à 300).')]
+    hook = _clean(data.get('accroche', ''))
+    notes.append(('ok' if hook and len(re.findall(r'[.!?…](\s|$)', hook)) <= 1 else 'warn', 'Accroche en une seule phrase.' if hook else 'Ajoutez une accroche : une question ou un paradoxe concret.'))
+    last = [l for l in text.strip().splitlines() if l.strip() and not l.strip().startswith('#')]
+    notes.append(('ok' if last and last[-1].rstrip().endswith('?') else 'warn', 'La conclusion se termine par une question ouverte.' if last and last[-1].rstrip().endswith('?') else 'Terminez par une question ouverte.'))
+    n_tags = len(re.findall(r'#\w+', text))
+    notes.append(('ok' if n_tags <= 3 else 'warn', f'{n_tags} hashtag(s), 3 maximum.'))
+    if re.search(r'https?://|www\.', text):
+        notes.append(('warn', 'Lien dans le texte : le skill n’en veut aucun dans le corps du post.'))
+    for k, label in (('competence', 'une compétence transférable'), ('propositions', 'une proposition concrète'), ('nuance', 'une nuance')):
+        if not data.get(k, '').strip():
+            notes.append(('warn', f'Il manque {label}.'))
+    long_paras = [p for p in text.split('\n\n') if len(re.findall(r'[.!?…](\s|$)', p)) > 4]
+    if long_paras:
+        notes.append(('warn', f'{len(long_paras)} paragraphe(s) de plus de 4 phrases : une idée par paragraphe.'))
+    names = sorted({m.group(1) for m in re.finditer(r'(?<=[a-zà-ÿ,;:] )([A-ZÀ-Ý][\w’-]+)', body) if m.group(1) not in _COMMON_CAPS})
+    if names:
+        notes.append(('warn', 'Anonymisation : vérifiez ces noms propres possibles : ' + ', '.join(names[:8]) + '.'))
+    return notes

@@ -56,6 +56,29 @@ Réponds avec un bloc ```FR puis un bloc ```EN, puis une ligne par modification 
 {draft}'''
 
 
+IMPROVE_STORY = '''Voici un récit d’expérience assemblé par le studio à partir des faits que j’ai fournis. Améliore sa rédaction en appliquant le skill redaction-post-linkedin, sans rien ajouter de factuel.
+Règles du skill, non négociables :
+- Garde chaque fait, lieu, délai et citation tels quels ; n’en ajoute aucun. Ce qui manque reste {{{{à compléter}}}}.
+- Accroche en une phrase : une question ou un paradoxe concret.
+- Le problème en une phrase, puis les conséquences vécues ; anonymise toute entreprise, transporteur, ville ou personne.
+- Garde la compétence transférable, les propositions concrètes et la nuance.
+- Paragraphes de 2 à 4 phrases, une idée par paragraphe ; 250 à 300 mots ; ton sobre et direct, sans formule creuse.
+- Conclusion en deux temps : une phrase de thèse, puis une question ouverte en vouvoyant le lecteur.
+- Aucun lien dans le texte, 3 hashtags maximum à la fin.
+Réponds avec un bloc ```FR prêt à copier, puis une courte note sur les choix faits (accroche, angle, éléments anonymisés).
+
+## Faits fournis
+{ingredients}
+
+## Brouillon
+{draft}'''
+
+
+def improve_story_request(draft, data):
+    ingredients = '\n'.join(f'- {k} : {v.strip()}' for k, v in data.items() if v and v.strip())
+    return IMPROVE_STORY.format(ingredients=ingredients, draft=draft)
+
+
 def improve_request(draft, data, hook):
     ingredients = '\n'.join(f'- {k} : {v.strip()}' for k, v in data.items() if v and v.strip())
     return IMPROVE.format(id=hook['id'], name=hook['name'], ingredients=ingredients, draft=draft)

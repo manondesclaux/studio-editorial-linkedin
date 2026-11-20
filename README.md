@@ -12,7 +12,7 @@ Conçu par [Manon Desclaux](https://github.com/manondesclaux) pour son propre us
 | **Mon compte LinkedIn** | Relier votre compte LinkedIn (nom, photo) pour publier un post depuis le studio, et accéder à l’import de vos statistiques. |
 | **Calendrier** | Vos publications par jour, date du jour surlignée, vue mobile en agenda. |
 | **Publications** | Liste, tableau de production et galerie ; texte, accroches, photo, notes, statut, mesures, bouton « Publier sur LinkedIn ». |
-| **Assistant LinkedIn** | Les 11 skills LinkedIn intégrés : rédacteur guidé (sans IA), amélioration et conversation avec Claude, vérification anti-« texte IA », profil de voix. |
+| **Assistant LinkedIn** | **Récit d’expérience** (méthode du skill `redaction-post-linkedin` : accroche, problème, compétence transférable, propositions, nuance, question), **formules d’accroche** (21 formules de `li-post`), amélioration et conversation avec Claude, vérification anti-« texte IA », profil de voix. Les deux rédacteurs fonctionnent sans IA. |
 | **Idées de posts** | Noter une idée en vrac, la retravailler, la transformer en publication. |
 | **Contenus consommés** | Podcasts, vidéos, livres, articles ; un lien partagé depuis YouTube, Spotify ou Apple Podcasts crée la fiche tout seul. |
 | **GitHub** | Vos dépôts deviennent des idées de posts sur ce que vous avez réalisé. |
