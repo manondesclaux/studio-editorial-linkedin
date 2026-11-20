@@ -15,6 +15,7 @@ SOURCE = Path.home() / '.claude' / 'skills'
 MODELS = {'claude-opus-5-5': 'Claude Opus 5.5 · meilleure qualité', 'claude-sonnet-5-5': 'Claude Sonnet 5.5 · plus rapide, moins cher', 'claude-haiku-5-5': 'Claude Haiku 5.5 · très économique'}
 # Libellé, ce que fait le skill, et ce qu’il attend comme premier message
 CATALOG = {
+    'redaction-post-linkedin': ('Mon skill de rédaction', 'Écrit un post à partir d’une expérience vécue : accroche, compétence transférable, idées concrètes, conclusion en deux temps.', 'Racontez l’expérience dans l’ordre : déclencheur, réponses obtenues, conséquences.'),
     'li-post': ('Écrire un post', 'Trois accroches, un brouillon complet humanisé, en FR et EN.', 'Mon idée brute : ce qui s’est passé, pour qui, ce que ça a coûté ou rapporté…'),
     'li-human': ('Humaniser un texte', 'Retire les marques d’IA et réécrit les tournures signalées.', 'Collez le texte à humaniser.'),
     'li-carousel': ('Carrousel', 'Le texte de chaque slide et la couverture qui donne envie de swiper.', 'Le sujet ou la liste à transformer en carrousel.'),
@@ -27,6 +28,8 @@ CATALOG = {
     'li-dm': ('Message ou invitation', 'Note de connexion, premier message et relances.', 'À qui écrivez-vous, et pourquoi ?'),
     'li-inbox': ('Trier ma messagerie', 'Trie leads, recruteurs, pairs et spam, et rédige les réponses utiles.', 'Collez les messages et invitations à trier.'),
 }
+WRITING_SKILL = 'redaction-post-linkedin'
+PERSONAL_WRITING = ('li-post', 'li-repurpose', 'li-carousel', 'redaction-post-linkedin')
 ADAPTER = '''Tu es exécuté dans un Studio éditorial LinkedIn, une application Streamlit, et non dans Claude Code. La personne qui l’utilise est décrite dans voice.md et dans son profil (contexte du studio).
 - Tu n’as ni outils, ni accès aux fichiers, ni commandes. Les fichiers que le skill demande de lire (voice.md, hooks.json, rubric.json, log.md, le skill li-human) sont fournis ci-dessous : utilise-les directement.
 - Quand le skill demande de passer un texte dans /li-human, applique toi-même ses règles. Le studio exécute ensuite humanize.py et detect.py sur chaque bloc prêt à copier et affiche le score : n’invente pas de score.
@@ -88,6 +91,9 @@ def system_prompt(name):
     for ref in refs.get(name, []):
         if (SKILLS / ref).exists():
             parts.append(f'# Fichier {ref}\n\n' + (SKILLS / ref).read_text(encoding='utf-8'))
+    # Règles de rédaction personnelles, appliquées à tous les textes de post (prioritaires sur les consignes génériques)
+    if name in PERSONAL_WRITING and name != WRITING_SKILL and (SKILLS / WRITING_SKILL / 'SKILL.md').exists():
+        parts.append(f'# Skill {WRITING_SKILL} (règles de rédaction de la personne : elles priment sur les consignes génériques ci-dessus en cas de conflit)\n\n{_skill_text(WRITING_SKILL)}')
     if name != 'li-human' and (SKILLS / 'li-human' / 'SKILL.md').exists():
         parts.append('# Skill li-human (à appliquer avant de montrer un texte)\n\n' + _skill_text('li-human'))
     import storage
