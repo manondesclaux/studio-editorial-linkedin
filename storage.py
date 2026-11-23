@@ -100,6 +100,32 @@ def connect():
     return con
 
 
+# --- Mémoire par exécution de page : en ligne, chaque requête coûte un aller-retour réseau ---
+_RUN = threading.local()
+_READY = set()
+
+
+def begin_run():
+    """À appeler au début de chaque exécution de page : les lectures suivantes sont faites une seule fois."""
+    _RUN.cache = {}
+
+
+def _cached(key, loader):
+    cache = getattr(_RUN, 'cache', None)
+    if cache is None:
+        return loader()
+    if key not in cache:
+        cache[key] = loader()
+    return cache[key]
+
+
+def _forget(*keys):
+    cache = getattr(_RUN, 'cache', None)
+    if cache is not None:
+        for k in keys:
+            cache.pop(k, None)
+
+
 def research():
     """Benchmark, piliers et sujets : ceux de la base s’ils existent, sinon le modèle livré avec l’outil."""
     return get_meta('research') or json.loads((ROOT / 'data/recherche.json').read_text())
@@ -114,13 +140,18 @@ def save_profile(data):
     apply_profile()
 
 
-def apply_profile():
+def apply_profile(prof=None):
+    prof = profile() if prof is None else prof
     PILLARS.clear()
     PILLARS.update(DEFAULT_PILLARS)
-    PILLARS.update({k: v for k, v in profile().get('pillars', {}).items() if k in DEFAULT_PILLARS and v.strip()})
+    PILLARS.update({k: v for k, v in prof.get('pillars', {}).items() if k in DEFAULT_PILLARS and v.strip()})
 
 
 def init():
+    """Crée les tables et l’amorce. Une seule fois par base et par processus : inutile de le refaire à chaque clic."""
+    target = os.environ.get('DATABASE_URL') or str(DATA)
+    if target in _READY:
+        return
     with connect() as c:
         c.execute('CREATE TABLE IF NOT EXISTS posts (id TEXT PRIMARY KEY, payload TEXT NOT NULL)')
         c.execute('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)')
@@ -145,12 +176,16 @@ def init():
             c.execute("INSERT INTO meta VALUES ('seeded','1')")
         if not c.execute("SELECT 1 FROM meta WHERE key='voice'").fetchone() and (ROOT / 'data/voix.md').exists():
             c.execute('INSERT INTO meta VALUES (?,?)', ('voice', json.dumps((ROOT / 'data/voix.md').read_text(encoding='utf-8'), ensure_ascii=False)))
+    _READY.add(target)
+    _forget('meta')
     apply_profile()
 
 
 def posts():
-    with connect() as c:
-        return sorted([json.loads(r['payload']) for r in c.execute('SELECT payload FROM posts')], key=lambda p: (p.get('date') or '9999', p.get('time',''),p['id']))
+    def load():
+        with connect() as c:
+            return sorted([json.loads(r['payload']) for r in c.execute('SELECT payload FROM posts')], key=lambda p: (p.get('date') or '9999', p.get('time',''),p['id']))
+    return _cached('posts', load)
 
 
 def save(item):
@@ -163,6 +198,7 @@ def save(item):
     item = dict(item, updated_at=datetime.now().astimezone().isoformat())
     with connect() as c:
         c.execute('INSERT INTO posts VALUES (?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload', (item['id'], json.dumps(item,ensure_ascii=False)))
+    _forget('posts')
     return item
 
 
@@ -207,13 +243,16 @@ def account_state(id):
 
 
 def accounts():
-    with connect() as c:
-        return {r['id']:(bool(r['favorite']),r['notes']) for r in c.execute('SELECT id,favorite,notes FROM accounts')}
+    def load():
+        with connect() as c:
+            return {r['id']:(bool(r['favorite']),r['notes']) for r in c.execute('SELECT id,favorite,notes FROM accounts')}
+    return _cached('accounts', load)
 
 
 def save_account(id, favorite, notes):
     with connect() as c:
         c.execute('INSERT INTO accounts VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET favorite=excluded.favorite,notes=excluded.notes',(id,int(favorite),notes))
+    _forget('accounts')
 
 
 def backup():
@@ -251,9 +290,11 @@ def save_voice(text):
 
 def items(table):
     assert table in ITEM_TABLES
-    with connect() as c:
-        rows=[json.loads(r['payload']) for r in c.execute(f'SELECT payload FROM {table}')]
-    return sorted(rows, key=lambda r: r.get('created_at') or r.get('date') or '', reverse=True)
+    def load():
+        with connect() as c:
+            rows=[json.loads(r['payload']) for r in c.execute(f'SELECT payload FROM {table}')]
+        return sorted(rows, key=lambda r: r.get('created_at') or r.get('date') or '', reverse=True)
+    return _cached('items:'+table, load)
 
 
 def save_item(table, item):
@@ -265,6 +306,7 @@ def save_item(table, item):
     item=dict(item, updated_at=datetime.now().astimezone().isoformat())
     with connect() as c:
         c.execute(f'INSERT INTO {table} VALUES (?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload', (item['id'], json.dumps(item,ensure_ascii=False)))
+    _forget('items:'+table)
     return item
 
 
@@ -272,6 +314,7 @@ def delete_item(table, id):
     assert table in ITEM_TABLES
     with connect() as c:
         c.execute(f'DELETE FROM {table} WHERE id=?', (id,))
+    _forget('items:'+table)
 
 
 def new_idea(title='', note='', pillar='A', source='', url='', content_id='', repo=''):
@@ -282,20 +325,29 @@ def new_content(kind='Podcast'):
     return dict(id='C-'+uuid.uuid4().hex[:10], kind=kind, title='', author='', url='', date=date.today().isoformat(), takeaways='', quote='', tags='', pillar='A', created_at=datetime.now().astimezone().isoformat())
 
 
+def _all_meta():
+    def load():
+        with connect() as c:
+            return {r['key']: r['value'] for r in c.execute('SELECT key,value FROM meta')}
+    return _cached('meta', load)
+
+
 def get_meta(key, default=None):
-    with connect() as c:
-        r=c.execute('SELECT value FROM meta WHERE key=?',(key,)).fetchone()
-    return json.loads(r['value']) if r else default
+    """Tous les réglages sont lus en une requête par page, puis servis depuis la mémoire."""
+    raw = _all_meta().get(key)
+    return json.loads(raw) if raw is not None else default
 
 
 def set_meta(key, value):
     with connect() as c:
         c.execute('INSERT INTO meta VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(key,json.dumps(value,ensure_ascii=False)))
+    _forget('meta')
 
 
 def delete_meta(key):
     with connect() as c:
         c.execute('DELETE FROM meta WHERE key=?',(key,))
+    _forget('meta')
 
 
 # --- LinkedIn : import de l'export officiel des statistiques (XLSX ou CSV) ---

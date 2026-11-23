@@ -47,6 +47,7 @@ def require_password():
     st.stop()
 
 
+db.begin_run()  # chaque donnée n’est lue qu’une fois par page
 require_password()
 db.init()
 # Identité de marque : beige clair, beige foncé, marron, noir, blanc
@@ -138,6 +139,7 @@ if st.query_params.get('ajout'):
     goto('Contenus consommés')
 
 all_posts=db.posts(); research=db.research(); profile=db.profile(); li_auth=db.get_meta('linkedin_auth')
+db.apply_profile(profile)
 ideas=db.items('ideas'); contents=db.items('contents'); li_stats=db.items('linkedin')
 content_label={c['id']:ICONS.get(c['kind'],'')+' '+c['title'] for c in contents}
 page=st.query_params.get('page',PAGES[0])
@@ -147,9 +149,11 @@ with st.sidebar:
     if db.online() and not os.environ.get('APP_PASSWORD'):
         st.warning('Studio en ligne sans mot de passe : ajoutez APP_PASSWORD dans les secrets (voir MISE-EN-LIGNE.md).')
     st.caption(' · '.join(x for x in [profile.get('name',''),' / '.join(profile.get('metiers',[]))] if x) or 'Complétez votre profil dans Personnalisation')
+    def _open(target):
+        # Appelé avant la nouvelle exécution : la page s’affiche en une seule exécution, sans st.rerun()
+        st.query_params.clear(); st.query_params['page']=target
     for nav in PAGES:
-        if st.button(nav,width='stretch',type='primary' if page==nav else 'secondary'):
-            goto(nav)
+        st.button(nav,width='stretch',type='primary' if page==nav else 'secondary',on_click=_open,args=(nav,),key='nav-'+nav)
     st.divider()
     st.caption('Base en ligne · mêmes données sur le téléphone et l’ordinateur' if db.online() else 'Espace local · données conservées sur cet ordinateur')
     st.caption('Statistiques LinkedIn importées depuis l’export officiel ; GitHub synchronisé à la demande. Vos données restent dans votre propre base.')
