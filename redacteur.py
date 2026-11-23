@@ -164,7 +164,7 @@ def proofs(voice_text):
 # --- Récit d’expérience : la méthode du skill redaction-post-linkedin, sans IA ---
 
 STORY_FIELDS = {
-    'accroche': ('Accroche : une question ou un paradoxe concret', 'Ex. : Rendez-vous annulé, ou rendez-vous oublié ?'),
+    'accroche': ('Accroche : une question ou un paradoxe concret (140 caractères au plus, sur une ou deux lignes)', 'Ex. : Rendez-vous annulé, ou rendez-vous oublié ?'),
     'declencheur': ('Le fait déclencheur, en une phrase', 'Ex. : Mon rendez-vous a été annulé la veille, sans explication.'),
     'reponses': ('Les réponses obtenues', 'Ce qu’on vous a répondu, dans l’ordre. Ex. : Le service client m’a renvoyée vers le formulaire en ligne.'),
     'consequences': ('Les conséquences pour vous', 'Ex. : Trois semaines d’attente pour un nouveau créneau.'),
@@ -175,7 +175,7 @@ STORY_FIELDS = {
     'nuance': ('La nuance : ce que l’outil ou le processus apporte', 'Ex. : La prise de rendez-vous en ligne fait gagner du temps à tout le monde.'),
     'propositions': ('Ma solution : ce que je ferais (une action par ligne)', 'Ex. : prévenir par SMS avec trois nouveaux créneaux en un clic'),
     'poste': ('Ce que j’apporterais dans le poste visé', 'Ex. : En tant que Product Owner, c’est ce réflexe que j’apporterais : écrire le cas qui échoue avant de livrer celui qui marche.'),
-    'these': ('La phrase de thèse', 'Ex. : Un parcours se juge sur ses exceptions.'),
+    'these': ('La phrase de thèse : une formule courte à retenir (15 mots au plus)', 'Ex. : Une erreur se rattrape. Une relation, elle, se joue maintenant.'),
     'question': ('La question ouverte finale', 'Ex. : Vos parcours sont-ils pensés pour les cas où tout se passe mal ?'),
     'hashtags': ('Hashtags (3 maximum)', 'Ex. : #ExpérienceClient #GestionDeProduit'),
 }
@@ -189,7 +189,7 @@ def compose_story(data):
     nuance, propositions concrètes, thèse puis question ouverte."""
     get = lambda k: _end(_cap(_clean(data.get(k, ''))))
     props = [_clean(p).strip(' -•▸→').rstrip('.') for p in data.get('propositions', '').splitlines() if _clean(p).strip(' -•▸→')]
-    parts = [_clean(data.get('accroche', ''))]
+    parts = ['\n'.join(_clean(l) for l in data.get('accroche', '').splitlines() if l.strip())]
     parts.append(' '.join(x for x in (get('declencheur'), get('consequences')) if x))
     parts += [get('reponses'), get('enjeu'), ' '.join(x for x in (get('competence'), get('preuve')) if x), get('regard'), get('nuance')]
     if props:
@@ -214,7 +214,16 @@ def story_checks(text, data):
     words = len(re.findall(r"[\w’'-]+", body))
     notes = [('ok' if 250 <= words <= 320 else 'warn', f'{words} mots (longueur visée par le skill : 250 à 300, 320 au plus).')]
     hook = _clean(data.get('accroche', ''))
-    notes.append(('ok' if hook and len(re.findall(r'[.!?…](\s|$)', hook)) <= 1 else 'warn', 'Accroche en une seule phrase.' if hook else 'Ajoutez une accroche : une question ou un paradoxe concret.'))
+    notes.append(('ok' if hook and len(re.findall(r'[.!?…:](\s|$)', hook)) <= 2 else 'warn', 'Accroche en une ou deux lignes.' if hook else 'Ajoutez une accroche : une question ou un paradoxe concret.'))
+    if hook:
+        notes.append(('ok' if len(hook) <= 140 else 'warn', f'Accroche de {len(hook)} caractères (140 au plus pour rester visible sur mobile).'))
+    thesis = _clean(data.get('these', ''))
+    if thesis:
+        n = len(re.findall(r"[\w’'-]+", thesis))
+        notes.append(('ok' if n <= 15 else 'warn', f'Thèse de {n} mots : ' + ('assez courte pour être retenue.' if n <= 15 else 'raccourcissez-la (15 au plus) pour qu’elle se retienne.')))
+    tu = re.findall(r"\b(tu|ton|ta|tes|toi|t’|t')\b", body, flags=re.I)
+    if tu:
+        notes.append(('warn', 'Tutoiement repéré (' + ', '.join(sorted(set(w.lower() for w in tu))) + ') : le skill vouvoie le lecteur partout.'))
     last = [l for l in text.strip().splitlines() if l.strip() and not l.strip().startswith('#')]
     notes.append(('ok' if last and last[-1].rstrip().endswith('?') else 'warn', 'La conclusion se termine par une question ouverte.' if last and last[-1].rstrip().endswith('?') else 'Terminez par une question ouverte.'))
     n_tags = len(re.findall(r'#\w+', text))

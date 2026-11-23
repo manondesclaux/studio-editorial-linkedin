@@ -401,7 +401,7 @@ elif page=='Assistant LinkedIn':
         proof_picker('story')
         data={}
         for k,(label,help_) in rd.STORY_FIELDS.items():
-            widget=st.text_area if k in ('declencheur','reponses','consequences','competence','preuve','regard','nuance','propositions','poste') else st.text_input
+            widget=st.text_area if k in ('accroche','declencheur','reponses','consequences','competence','preuve','regard','nuance','propositions','poste') else st.text_input
             data[k]=widget(label+(' *' if k in rd.STORY_REQUIRED else ''),key='story-'+k,placeholder=help_)
         missing=[rd.STORY_FIELDS[k][0].split(' :')[0].split(' (')[0] for k in rd.STORY_REQUIRED if not data[k].strip()]
         if missing:
@@ -418,6 +418,7 @@ elif page=='Assistant LinkedIn':
             st.markdown('**Contrôle avant livraison**')
             for level,msg in rd.story_checks(text,data): (st.caption if level=='ok' else st.warning)(('✓ ' if level=='ok' else '')+msg)
             for f in (clean or {}).get('report',{}).get('structures',[]): st.warning(f"{f['name']} : {f['fix']}")
+            st.caption('Visuel : prévoyez une photo de vous en situation, un schéma ou un croquis, sans donnée confidentielle. Ajoutez-le dans la fiche de la publication.')
             save_buttons(text,'story','récit d’expérience')
             st.subheader('Améliorer avec l’IA')
             st.caption('L’IA réécrit ce récit avec votre skill redaction-post-linkedin et vos posts déjà publiés comme références de style, sans toucher aux faits. Le résultat repasse par le même contrôle.')
