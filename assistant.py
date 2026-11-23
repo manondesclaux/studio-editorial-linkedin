@@ -47,6 +47,7 @@ Règles du studio, non négociables :
 - Une phrase qui recadre, puis une seule question finale ou une consigne, jamais les deux.
 - Aucun lien dans le texte, 3 hashtags maximum à la fin.
 - Aucun tiret cadratin, aucun des mots que voice.md interdit.
+- Ma valeur ajoutée doit se voir : mon point de vue, ce que je ferais, une preuve de ce que j’ai accompli (chiffrée si possible, tirée des ingrédients ou du profil, jamais inventée) et ce que j’apporterais dans le poste visé. S’il manque un élément, écris {{{{à compléter}}}} à sa place.
 Réponds avec un bloc ```FR puis un bloc ```EN, puis une ligne par modification importante.
 
 ## Ingrédients
@@ -61,8 +62,8 @@ Règles du skill, non négociables :
 - Garde chaque fait, lieu, délai et citation tels quels ; n’en ajoute aucun. Ce qui manque reste {{{{à compléter}}}}.
 - Accroche en une phrase : une question ou un paradoxe concret.
 - Le problème en une phrase, puis les conséquences vécues ; anonymise toute entreprise, transporteur, ville ou personne.
-- Garde la compétence transférable, les propositions concrètes et la nuance.
-- Paragraphes de 2 à 4 phrases, une idée par paragraphe ; 250 à 300 mots ; ton sobre et direct, sans formule creuse.
+- Garde la compétence transférable, la preuve chiffrée, mon point de vue, les propositions (ce que je ferais), la transposition vers le poste visé et la nuance : ma valeur ajoutée doit se voir dans le post.
+- Paragraphes de 2 à 4 phrases, une idée par paragraphe ; 250 à 300 mots (320 au plus) ; ton sobre et direct, sans formule creuse.
 - Conclusion en deux temps : une phrase de thèse, puis une question ouverte en vouvoyant le lecteur.
 - Aucun lien dans le texte, 3 hashtags maximum à la fin.
 Réponds avec un bloc ```FR prêt à copier, puis une courte note sur les choix faits (accroche, angle, éléments anonymisés).

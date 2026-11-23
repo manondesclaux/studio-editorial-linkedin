@@ -14,6 +14,8 @@ FIELDS = {
     'points': ('Les étapes ou points clés (un par ligne)', 'Facultatif. 2 à 5 lignes courtes.'),
     'lecon': ('Ce que j’en retiens', 'La phrase qui recadre tout le reste. Ex. : Le plus simple à expliquer est souvent le plus simple à adopter.'),
     'produit': ('Le lien avec le produit', 'Facultatif. Ex. : Dans mon métier, je retrouve exactement cet arbitrage.'),
+    'preuve': ('Ma preuve : ce que j’ai accompli, chiffré comme sur un CV', 'Ex. : J’ai piloté des projets jusqu’à 300 k€ avec 15 interlocuteurs.'),
+    'valeur': ('Ce que j’apporterais dans le poste visé', 'Ex. : Dans une équipe produit, j’apporterais ce réflexe : écrire la décision avant de la livrer.'),
     'question': ('La question finale', 'Une question que seul ce post peut poser. Ex. : Quelle réunion supprimeriez-vous demain ?'),
     'hashtags': ('Hashtags (3 maximum)', 'Ex. : #Management #Méthode'),
 }
@@ -118,8 +120,12 @@ def compose(data, hook):
         parts.append(('Concrètement :' if hook['id'] != 5 else 'Les voici :') + '\n' + '\n'.join('- ' + _end(_cap(p)) for p in s['points_list']))
     if s.get('lecon'):
         parts.append(_end(_cap(s['lecon'])))
+    if s.get('preuve') and 'preuve' not in used:
+        parts.append(_end(_cap(s['preuve'])))
     if s.get('produit'):
         parts.append(_end(_cap(s['produit'])))
+    if s.get('valeur'):
+        parts.append(_end(_cap(s['valeur'])))
     if s.get('question'):
         parts.append(_end(_cap(_clean(data['question']))))  # question ou consigne : la ponctuation de l’autrice est gardée
     tags = re.findall(r'#\w+', data.get('hashtags', ''))[:3]
@@ -145,7 +151,7 @@ def checks(text, data):
         notes.append(('warn', 'Pas de question finale : terminez par une question ou une consigne, jamais les deux.'))
     if len(re.findall(r'#\w+', text)) > 3:
         notes.append(('warn', 'Plus de 3 hashtags.'))
-    return notes
+    return notes + value_checks(data, 'lecon', 'valeur')
 
 
 def proofs(voice_text):
@@ -164,14 +170,16 @@ STORY_FIELDS = {
     'consequences': ('Les conséquences pour vous', 'Ex. : Trois semaines d’attente pour un nouveau créneau.'),
     'enjeu': ('L’enjeu, en une phrase (facultatif)', 'Ex. : Je ne cherche pas un coupable. Je cherche une solution.'),
     'competence': ('La compétence transférable de votre autre métier', 'Ex. : En gestion de projet, on prévient avant de décaler un jalon et on propose une alternative.'),
-    'regard': ('Votre regard produit (facultatif)', 'Ex. : C’est quand le parcours déraille qu’on voit s’il a été pensé.'),
+    'preuve': ('Ma preuve : ce que j’ai accompli, chiffré comme sur un CV', 'Ex. : J’ai coordonné jusqu’à 15 interlocuteurs sur un même projet, avec 90 % des livraisons dans les délais.'),
+    'regard': ('Mon point de vue sur la situation', 'Ex. : C’est quand le parcours déraille qu’on voit s’il a été pensé.'),
     'nuance': ('La nuance : ce que l’outil ou le processus apporte', 'Ex. : La prise de rendez-vous en ligne fait gagner du temps à tout le monde.'),
-    'propositions': ('Vos propositions concrètes (une par ligne)', 'Ex. : prévenir par SMS avec trois nouveaux créneaux en un clic'),
+    'propositions': ('Ma solution : ce que je ferais (une action par ligne)', 'Ex. : prévenir par SMS avec trois nouveaux créneaux en un clic'),
+    'poste': ('Ce que j’apporterais dans le poste visé', 'Ex. : En tant que Product Owner, c’est ce réflexe que j’apporterais : écrire le cas qui échoue avant de livrer celui qui marche.'),
     'these': ('La phrase de thèse', 'Ex. : Un parcours se juge sur ses exceptions.'),
     'question': ('La question ouverte finale', 'Ex. : Vos parcours sont-ils pensés pour les cas où tout se passe mal ?'),
     'hashtags': ('Hashtags (3 maximum)', 'Ex. : #ExpérienceClient #GestionDeProduit'),
 }
-STORY_REQUIRED = ('accroche', 'declencheur', 'competence', 'nuance', 'propositions', 'these', 'question')
+STORY_REQUIRED = ('accroche', 'declencheur', 'competence', 'preuve', 'regard', 'nuance', 'propositions', 'poste', 'these', 'question')
 # Mots avec majuscule autorisés en milieu de phrase (sigles et noms d’outils génériques)
 _COMMON_CAPS = {'IA', 'SMS', 'LinkedIn', 'B2B', 'B2C', 'PM', 'PO', 'UX', 'UI', 'KPI', 'CRM', 'SaaS', 'API', 'MVP', 'RGPD', 'France', 'Je', 'Product', 'Owner', 'Manager'}
 
@@ -183,7 +191,7 @@ def compose_story(data):
     props = [_clean(p).strip(' -•▸→').rstrip('.') for p in data.get('propositions', '').splitlines() if _clean(p).strip(' -•▸→')]
     parts = [_clean(data.get('accroche', ''))]
     parts.append(' '.join(x for x in (get('declencheur'), get('consequences')) if x))
-    parts += [get('reponses'), get('enjeu'), get('competence'), get('regard'), get('nuance')]
+    parts += [get('reponses'), get('enjeu'), ' '.join(x for x in (get('competence'), get('preuve')) if x), get('regard'), get('nuance')]
     if props:
         words = ['un garde-fou', 'deux garde-fous', 'trois garde-fous', 'quatre garde-fous', 'cinq garde-fous']
         intro = f'Si je devais concevoir ce parcours, je prévoirais {words[min(len(props), 5) - 1]}.'
@@ -193,7 +201,7 @@ def compose_story(data):
             parts.append(intro + ' ' + body)
         else:
             parts.append(intro + '\n' + '\n'.join('- ' + _end(_cap(p)) for p in props))
-    parts += [get('these'), _end(_cap(_clean(data.get('question', ''))), ' ?') if data.get('question', '').strip() else '']
+    parts += [get('poste'), get('these'), _end(_cap(_clean(data.get('question', ''))), ' ?') if data.get('question', '').strip() else '']
     tags = re.findall(r'#\w+', data.get('hashtags', ''))[:3]
     if tags:
         parts.append(' '.join(tags))
@@ -204,7 +212,7 @@ def story_checks(text, data):
     """Le « contrôle avant livraison » du skill redaction-post-linkedin."""
     body = re.sub(r'#\w+', '', text)
     words = len(re.findall(r"[\w’'-]+", body))
-    notes = [('ok' if 250 <= words <= 300 else 'warn', f'{words} mots (longueur visée par le skill : 250 à 300).')]
+    notes = [('ok' if 250 <= words <= 320 else 'warn', f'{words} mots (longueur visée par le skill : 250 à 300, 320 au plus).')]
     hook = _clean(data.get('accroche', ''))
     notes.append(('ok' if hook and len(re.findall(r'[.!?…](\s|$)', hook)) <= 1 else 'warn', 'Accroche en une seule phrase.' if hook else 'Ajoutez une accroche : une question ou un paradoxe concret.'))
     last = [l for l in text.strip().splitlines() if l.strip() and not l.strip().startswith('#')]
@@ -216,10 +224,30 @@ def story_checks(text, data):
     for k, label in (('competence', 'une compétence transférable'), ('propositions', 'une proposition concrète'), ('nuance', 'une nuance')):
         if not data.get(k, '').strip():
             notes.append(('warn', f'Il manque {label}.'))
+    notes += value_checks(data, 'propositions', 'poste')
     long_paras = [p for p in text.split('\n\n') if len(re.findall(r'[.!?…](\s|$)', p)) > 4]
     if long_paras:
         notes.append(('warn', f'{len(long_paras)} paragraphe(s) de plus de 4 phrases : une idée par paragraphe.'))
     names = sorted({m.group(1) for m in re.finditer(r'(?<=[a-zà-ÿ,;:] )([A-ZÀ-Ý][\w’-]+)', body) if m.group(1) not in _COMMON_CAPS})
     if names:
         notes.append(('warn', 'Anonymisation : vérifiez ces noms propres possibles : ' + ', '.join(names[:8]) + '.'))
+    return notes
+
+
+def value_checks(data, solution_key, job_key):
+    """Ma valeur ajoutée dans chaque post : vision, solution, preuve chiffrée, transposition vers le poste visé."""
+    notes = []
+    proof = _clean(data.get('preuve', ''))
+    if not proof:
+        notes.append(('warn', 'Valeur ajoutée : ajoutez une preuve, ce que vous avez accompli, comme une ligne d’expérience de CV.'))
+    elif not re.search(r'\d', proof):
+        notes.append(('warn', 'Preuve sans chiffre : ajoutez un volume, un délai, un budget ou un résultat si vous en avez un.'))
+    else:
+        notes.append(('ok', 'Preuve chiffrée présente.'))
+    if not _clean(data.get(solution_key, '')):
+        notes.append(('warn', 'Valeur ajoutée : dites ce que vous feriez, votre solution ou votre point de vue.'))
+    if _clean(data.get(job_key, '')):
+        notes.append(('ok', 'Transposition vers le poste visé présente.'))
+    else:
+        notes.append(('warn', 'Valeur ajoutée : écrivez ce que vous apporteriez dans le poste visé.'))
     return notes

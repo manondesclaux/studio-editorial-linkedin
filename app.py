@@ -337,6 +337,15 @@ elif page=='Assistant LinkedIn':
         if attached: text+='\n\n## Éléments joints par l’utilisateur\n\n'+'\n\n'.join(pool[k][1] for k in attached)
         return text
 
+    def proof_picker(prefix):
+        """Piocher une preuve chiffrée dans le profil de voix (section Proof I can use)."""
+        found=rd.proofs(voice_text)
+        if not found: return
+        c1,c2=st.columns([4,1])
+        pick=c1.selectbox('Piocher une preuve dans mon profil',range(len(found)),format_func=lambda n:found[n][:120],key=prefix+'-proof-pick')
+        if c2.button('Utiliser',key=prefix+'-proof-use'):
+            st.session_state[prefix+'-preuve']=found[pick];st.rerun()
+
     def save_buttons(text,key,origin):
         a,c=st.columns(2)
         if a.button('Garder comme idée',key='keep-'+key):
@@ -388,10 +397,11 @@ elif page=='Assistant LinkedIn':
     t_story,t_guide,t_chat,t_check,t_voice=st.tabs(['📖 Récit d’expérience','✍️ Formules d’accroche','💬 Conversation IA','🔎 Vérifier un texte','🗣️ Profil de voix'])
 
     with t_story:
-        st.caption('La méthode du skill redaction-post-linkedin : partir d’une expérience vécue pour montrer votre regard produit. Racontez les faits dans l’ordre ; le studio assemble le post, le vérifie selon le skill et le note avec li-human. Rien n’est inventé.')
+        st.caption('La méthode du skill redaction-post-linkedin : partir d’une expérience vécue pour montrer votre regard produit et votre valeur ajoutée. Chaque post dit votre point de vue, ce que vous feriez, ce que vous avez accompli qui le prouve, et ce que vous apporteriez dans le poste visé. Rien n’est inventé.')
+        proof_picker('story')
         data={}
         for k,(label,help_) in rd.STORY_FIELDS.items():
-            widget=st.text_area if k in ('declencheur','reponses','consequences','competence','regard','nuance','propositions') else st.text_input
+            widget=st.text_area if k in ('declencheur','reponses','consequences','competence','preuve','regard','nuance','propositions','poste') else st.text_input
             data[k]=widget(label+(' *' if k in rd.STORY_REQUIRED else ''),key='story-'+k,placeholder=help_)
         missing=[rd.STORY_FIELDS[k][0].split(' :')[0].split(' (')[0] for k in rd.STORY_REQUIRED if not data[k].strip()]
         if missing:
@@ -454,9 +464,10 @@ elif page=='Assistant LinkedIn':
                 fill=dict(chiffre=rd.proofs(voice_text)[int(ref)])
             for k in list(rd.FIELDS)+list(rd.EXTRA): st.session_state['rd-'+k]=fill.get(k,'')
             st.rerun()
+        proof_picker('rd')
         data={}
         for k,(label,help_) in rd.FIELDS.items():
-            widget=st.text_area if k in ('fait','points') else st.text_input
+            widget=st.text_area if k in ('fait','points','preuve','valeur') else st.text_input
             data[k]=widget(label,key='rd-'+k,placeholder=help_)
         with st.expander('Ingrédients pour d’autres accroches (contre-pied, avant/après, erreur, citation…)'):
             cols=st.columns(2)
