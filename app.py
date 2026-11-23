@@ -18,6 +18,7 @@ try:
 except Exception:
     pass
 import assistant as ai
+import dictee as dic
 import linkedin_api as li
 import redacteur as rd
 import storage as db
@@ -70,8 +71,19 @@ button[data-testid="stBaseButton-tertiary"] p{text-align:left}
 [class*="st-key-cal-"] button[data-testid="stBaseButton-tertiary"]{font-size:13px;background:var(--beige)!important;border-left:3px solid var(--marron)!important;border-radius:4px;padding:5px 7px!important;width:100%;text-decoration:none}
 .st-key-cal-today button[data-testid="stBaseButton-tertiary"]{background:var(--blanc)!important}
 .st-key-cal-agenda{display:none} @media(max-width:700px){.st-key-cal-grid{display:none}.st-key-cal-agenda{display:block}}
+.menu-section{margin:14px 0 2px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--marron)}
 .tag{display:inline-block;background:var(--beige-fonce);color:var(--noir);border-radius:10px;padding:1px 9px;margin:0 4px 4px 0;font-size:12px}
 </style>''',unsafe_allow_html=True)
+# Menu : 7 entrées en sections, plus les réglages ; les pages voisines deviennent des onglets d’une même entrée
+MENU=[('','Accueil',['Vue d’ensemble']),
+      ('Écrire','Idées',['Idées de posts']),
+      ('Écrire','Publications',['Publications','Nouvelle publication']),
+      ('Écrire','Assistant IA',['Assistant LinkedIn']),
+      ('Planifier','Calendrier',['Calendrier']),
+      ('S’inspirer','Inspirations',['Contenus consommés','GitHub','Benchmark international','Sujets & stratégie']),
+      ('Mesurer','Statistiques',['Impact LinkedIn','Mon compte LinkedIn']),
+      ('','⚙ Réglages',['Personnalisation','Sauvegardes'])]
+TABS={'Contenus consommés':'Contenus','GitHub':'GitHub','Benchmark international':'Benchmark','Sujets & stratégie':'Sujets & stratégie','Impact LinkedIn':'Impact des posts','Mon compte LinkedIn':'Compte LinkedIn','Personnalisation':'Profil','Sauvegardes':'Sauvegardes'}
 PAGES=['Vue d’ensemble','Personnalisation','Mon compte LinkedIn','Calendrier','Publications','Nouvelle publication','Assistant LinkedIn','Idées de posts','Contenus consommés','GitHub','Impact LinkedIn','Benchmark international','Sujets & stratégie','Sauvegardes']
 SUGGESTIONS=dict(
     metiers=['Product Owner','Product Manager','Product builder','Business analyst','Chef de projet IT','UX designer','Data analyst','Consultant','Entrepreneur','Freelance','Développeur','Marketing','Recruteur'],
@@ -150,23 +162,96 @@ all_posts=db.posts(); research=db.research(); profile=db.profile(); li_auth=db.g
 db.apply_profile(profile)
 ideas=db.items('ideas'); contents=db.items('contents'); li_stats=db.items('linkedin')
 content_label={c['id']:ICONS.get(c['kind'],'')+' '+c['title'] for c in contents}
+
+def build_context(skill,extra=''):
+    """Contexte envoyé à Claude : journal des publications, statistiques, profil et posts publiés comme références."""
+    # Le journal remplace log.md ; les statistiques nourrissent li-audit, li-plan et li-post
+    log=[f"- {p.get('date') or '?'} · {p['status']} · {p['title']} · « {p['body'].splitlines()[0] if p['body'] else ''} »" for p in all_posts if p['status'] in ('Publié','Prêt','Texte prêt')]
+    stats=[f"- {r.get('title') or r['id']} · {r.get('date','')} · {r.get('impressions')} impressions · {r.get('engagements')} interactions · {r.get('comments')} commentaires" for r in li_stats]
+    text=f"Date du jour : {TODAY.isoformat()} (Europe/Paris).\n\n## Journal des publications (tient lieu de log.md)\n"+'\n'.join(log)
+    if skill in ('li-audit','li-plan','li-post'): text+='\n\n## Statistiques LinkedIn importées\n'+('\n'.join(stats) or 'Aucune.')
+    if skill=='li-plan': text+='\n\n## Idées en attente\n'+'\n'.join(f"- {i['title']} ({db.PILLARS[i['pillar']]})" for i in ideas if i['status'] in db.IDEA_STATUSES[:3])
+    prof='\n'.join(f'- {label} : {", ".join(v) if isinstance(v,list) else v}' for label,v in [('Nom',profile.get('name')),('Métiers',profile.get('metiers')),('Centres d’intérêt',profile.get('interests')),('Compétences professionnelles',profile.get('skills_pro')),('Compétences personnelles',profile.get('skills_perso')),('Présentation',profile.get('presentation')),('Résultats attendus',profile.get('objectives')),('Public visé',profile.get('audience')),('Piliers',list(db.PILLARS.values()))] if v)
+    text+='\n\n## Profil (onglet Personnalisation)\n'+(prof or 'Non renseigné.')
+    refs=[p for p in all_posts if p['status']=='Publié' and p['body'].strip()][-3:]
+    if skill in ai.PERSONAL_WRITING and refs:
+        text+='\n\n## Posts déjà publiés (références de style, ne pas recopier leurs faits)\n\n'+'\n\n---\n\n'.join(p['body'][:2500] for p in refs)
+    if extra: text+='\n\n## Éléments joints par l’utilisateur\n\n'+extra
+    return text
+
+def proof_picker(prefix):
+    """Piocher une preuve chiffrée dans le profil de voix (section Proof I can use)."""
+    found=rd.proofs(voice_text)
+    if not found: return
+    c1,c2=st.columns([4,1])
+    pick=c1.selectbox('Piocher une preuve dans mon profil',range(len(found)),format_func=lambda n:found[n][:120],key=prefix+'-proof-pick')
+    if c2.button('Utiliser',key=prefix+'-proof-use'):
+        st.session_state[prefix+'-preuve']=found[pick];st.rerun()
+
+def ai_ready():
+    return ai.has_sdk() and (ai.key_from_env() or bool(st.session_state.get('anthropic_key')))
+
+def _use_text(target,text,result_key):
+    st.session_state[target]=text; st.session_state.pop(result_key,None)
+
+def improve_panel(target,origin):
+    """« Améliorer avec Claude » : réécrit le texte du champ `target` selon le skill de rédaction, sans rien inventer."""
+    text=st.session_state.get(target) or ''
+    result_key='improved-'+target
+    c1,c2=st.columns([1,2])
+    if c1.button('✨ Améliorer avec Claude',key='improve-'+target,disabled=not text.strip() or not ai_ready(),help='Réécrit votre texte en post abouti, selon vos règles de rédaction, sans rien inventer.'):
+        try:
+            st.session_state[result_key]=st.write_stream(ai.stream(ai.WRITING_SKILL,[dict(role='user',content=ai.improve_draft_request(text))],build_context(ai.WRITING_SKILL),st.session_state.get('ai-model','claude-opus-5-5'),st.session_state.get('anthropic_key') or None))
+            st.rerun()
+        except Exception as e: st.error(ai.explain(e))
+    if not ai_ready(): c2.caption('Pour utiliser Claude : clé API dans Assistant IA → Connexion à l’IA, ou ANTHROPIC_API_KEY dans les secrets.')
+    answer=st.session_state.get(result_key)
+    if answer:
+        for b,(label,version) in enumerate(ai.blocks(answer)):
+            with st.container(border=True):
+                st.markdown(f'**Proposition de Claude · {label}**')
+                st.code(version,language=None,wrap_lines=True)
+                words=len(re.findall(r"[\w’'-]+",re.sub(r'#\w+','',version)))
+                try: st.caption(f"{words} mots · score humain {human_score(version)['human_score']:.0f}/100 · les passages {{{{…}}}} restent à compléter")
+                except RuntimeError: st.caption(f'{words} mots')
+                a,c=st.columns(2)
+                a.button('Utiliser ce texte',key=f'use-{target}-{b}',type='primary',on_click=_use_text,args=(target,version,result_key))
+                c.button('Ignorer',key=f'drop-{target}-{b}',on_click=lambda k=result_key: st.session_state.pop(k,None))
+        notes=re.sub(r'```.*?```','',answer,flags=re.S).strip()
+        if notes:
+            with st.expander('Ce que Claude a gardé et reformulé'): st.markdown(notes)
 page=st.query_params.get('page',PAGES[0])
 if page not in PAGES: page=PAGES[0]
 with st.sidebar:
     st.title('✦ Studio éditorial')
     if db.online() and not os.environ.get('APP_PASSWORD'):
         st.warning('Studio en ligne sans mot de passe : ajoutez APP_PASSWORD dans les secrets (voir MISE-EN-LIGNE.md).')
-    st.caption(' · '.join(x for x in [profile.get('name',''),' / '.join(profile.get('metiers',[]))] if x) or 'Complétez votre profil dans Personnalisation')
+    st.caption(' · '.join(x for x in [profile.get('name',''),' / '.join(profile.get('metiers',[]))] if x) or 'Complétez votre profil dans Réglages → Profil')
     def _open(target):
         # Appelé avant la nouvelle exécution : la page s’affiche en une seule exécution, sans st.rerun()
         st.query_params.clear(); st.query_params['page']=target
-    for nav in PAGES:
-        st.button(nav,width='stretch',type='primary' if page==nav else 'secondary',on_click=_open,args=(nav,),key='nav-'+nav)
+    section=None
+    for sec,label,group in MENU:
+        if sec!=section:
+            section=sec
+            if sec: st.markdown(f'<div class="menu-section">{sec}</div>',unsafe_allow_html=True)
+            elif label.startswith('⚙'): st.divider()
+        st.button(label,width='stretch',type='primary' if page in group else 'secondary',on_click=_open,args=(group[0],),key='nav-'+label)
     st.divider()
     st.caption('Base en ligne · mêmes données sur le téléphone et l’ordinateur' if db.online() else 'Espace local · données conservées sur cet ordinateur')
     st.caption('Statistiques LinkedIn importées depuis l’export officiel ; GitHub synchronisé à la demande. Vos données restent dans votre propre base.')
 
-st.title(page)
+group=next(g for _,_,g in MENU if page in g)
+label=next(l for _,l,g in MENU if page in g)
+if len(group)>1 and page in TABS:
+    st.title(label.replace('⚙ ',''))
+    def _tab():
+        chosen=st.session_state.get('tabs-'+label)
+        if chosen: st.query_params.clear(); st.query_params['page']=chosen
+    st.session_state['tabs-'+label]=page
+    st.segmented_control('Rubrique',[g for g in group],format_func=TABS.get,key='tabs-'+label,on_change=_tab,label_visibility='collapsed')
+else:
+    st.title(page if page=='Nouvelle publication' else label)
 flash()
 
 if page=='Vue d’ensemble':
@@ -174,7 +259,7 @@ if page=='Vue d’ensemble':
     if not profile.get('name'):
         with st.container(border=True):
             st.markdown('**Bienvenue dans votre studio éditorial.** Trois étapes pour démarrer :')
-            st.markdown('1. **Personnalisation** : présentez-vous, vos métiers et vos piliers éditoriaux.\n2. **Mon compte LinkedIn** : reliez votre compte, puis importez vos statistiques.\n3. **Assistant LinkedIn** : notez une idée et laissez le rédacteur guidé construire votre premier post.')
+            st.markdown('1. **Réglages → Profil** : présentez-vous, vos métiers et vos piliers éditoriaux.\n2. **Statistiques → Compte LinkedIn** : reliez votre compte, puis importez vos statistiques.\n3. **Idées** : notez ou dictez une idée, puis laissez Claude ou le rédacteur guidé construire votre premier post.')
             if st.button('Commencer par la personnalisation',type='primary'): goto('Personnalisation')
     cols=st.columns(4)
     for c,(name,value) in zip(cols,[('Publications',len(all_posts)),('Textes préparés',sum(p['status'] in ['Texte prêt','Prêt'] for p in all_posts)),('Comptes analysés',len(research['benchmark'])),('Publiées',sum(p['status']=='Publié' for p in all_posts))]): c.metric(name,value)
@@ -228,6 +313,9 @@ elif page in ['Publications','Nouvelle publication']:
     pid=st.query_params.get('post')
     current=next((p for p in all_posts if p['id']==pid),None)
     if page=='Publications' and not current:
+        def _new_post():
+            st.session_state.pop('draft',None); st.query_params.clear(); st.query_params['page']='Nouvelle publication'
+        st.button('＋ Nouvelle publication',type='primary',on_click=_new_post,key='new-post')
         c1,c2,c3=st.columns(3)
         q=c1.text_input('Rechercher un sujet ou un texte')
         platform=c2.selectbox('Plateforme',['Toutes']+sorted({p['platform'] for p in all_posts}))
@@ -266,6 +354,15 @@ elif page in ['Publications','Nouvelle publication']:
             if right.button('Dupliquer pour une autre publication'):
                 clone=db.new_post(p['title']+' · copie',p['body'],p['sources'],p['platform']); clone.update(hooks=p['hooks'],visual=p['visual'],pillar=p['pillar'],angle=p['angle'])
                 st.session_state['draft']=clone;goto('Nouvelle publication')
+        body_key='body-'+p['id']
+        if body_key not in st.session_state: st.session_state[body_key]=p['body']
+        with st.container(border=True):
+            st.markdown('**Texte de la publication**')
+            spoken=dic.dictee('dictee-'+p['id'],'Dicter le texte')
+            if spoken: dic.ajouter(body_key,spoken)
+            st.text_area('Texte de la publication',key=body_key,height=400,label_visibility='collapsed')
+            st.caption('Le premier paragraphe est l’accroche retenue. Après une dictée ou une amélioration, pensez à enregistrer la publication.')
+            improve_panel(body_key,'publication')
         with st.form('editor-'+p['id']):
             title=st.text_input('Sujet',p['title'])
             c1,c2,c3=st.columns(3)
@@ -277,8 +374,6 @@ elif page in ['Publications','Nouvelle publication']:
             status=c1.selectbox('Statut',db.STATUSES,index=db.STATUSES.index(p['status']))
             priority=c2.selectbox('Priorité',['Essentiel','Optionnel'],index=['Essentiel','Optionnel'].index(p['priority']))
             pillar=c3.selectbox('Pilier',list(db.PILLARS),format_func=lambda x:db.PILLARS[x],index=list(db.PILLARS).index(p['pillar']))
-            body=st.text_area('Texte de la publication',p['body'],height=400)
-            st.caption('Les accroches alternatives sont disponibles sous le formulaire. Le premier paragraphe du texte est l’accroche retenue.')
             upload=st.file_uploader('Ajouter ou remplacer la photo (10 Mo maximum)',type=['png','jpg','jpeg','webp'])
             remove=st.checkbox('Retirer la photo actuelle') if p.get('photo') else False
             alt=st.text_input('Description de l’image pour l’accessibilité',p.get('alt',''))
@@ -297,7 +392,7 @@ elif page in ['Publications','Nouvelle publication']:
                 if not platform.strip(): raise ValueError('Indiquez une plateforme.')
                 photo='' if remove else p.get('photo','')
                 if upload: photo=db.save_photo(upload.getvalue())
-                saved=dict(p,title=title,body=body,date=day.isoformat() if planned else '',time=hour.strftime('%H:%M'),platform=platform.strip(),status=status,priority=priority,pillar=pillar,photo=photo,alt=alt,visual=visual,notes=notes,sources=sources,published_url=published.strip(),impressions=imp,comments=comments,leads=leads)
+                saved=dict(p,title=title,body=st.session_state.get(body_key,''),date=day.isoformat() if planned else '',time=hour.strftime('%H:%M'),platform=platform.strip(),status=status,priority=priority,pillar=pillar,photo=photo,alt=alt,visual=visual,notes=notes,sources=sources,published_url=published.strip(),impressions=imp,comments=comments,leads=leads)
                 db.save(saved);st.session_state.pop('draft',None);st.session_state['notice']='Publication enregistrée.'
                 idea=next((i for i in ideas if i['id']==p.get('from_idea')),None)
                 if idea and not idea.get('post_id'): db.save_item('ideas',dict(idea,status='Transformée en post',post_id=p['id']))
@@ -340,28 +435,7 @@ elif page=='Assistant LinkedIn':
     for r in repos: pool['repo:'+r['name']]=('GitHub · '+r['name'],f"Dépôt GitHub {r['name']} ({r['url']}) : {r['description']}\n{r['readme'][:3000]}")
 
     def studio_context(skill,attached):
-        # Le journal remplace log.md ; les statistiques nourrissent li-audit, li-plan et li-post
-        log=[f"- {p.get('date') or '?'} · {p['status']} · {p['title']} · « {p['body'].splitlines()[0] if p['body'] else ''} »" for p in all_posts if p['status'] in ('Publié','Prêt','Texte prêt')]
-        stats=[f"- {r.get('title') or r['id']} · {r.get('date','')} · {r.get('impressions')} impressions · {r.get('engagements')} interactions · {r.get('comments')} commentaires" for r in li_stats]
-        text=f"Date du jour : {TODAY.isoformat()} (Europe/Paris).\n\n## Journal des publications (tient lieu de log.md)\n"+'\n'.join(log)
-        if skill in ('li-audit','li-plan','li-post'): text+='\n\n## Statistiques LinkedIn importées\n'+('\n'.join(stats) or 'Aucune.')
-        if skill=='li-plan': text+='\n\n## Idées en attente\n'+'\n'.join(f"- {i['title']} ({db.PILLARS[i['pillar']]})" for i in ideas if i['status'] in db.IDEA_STATUSES[:3])
-        prof='\n'.join(f'- {label} : {", ".join(v) if isinstance(v,list) else v}' for label,v in [('Nom',profile.get('name')),('Métiers',profile.get('metiers')),('Centres d’intérêt',profile.get('interests')),('Compétences professionnelles',profile.get('skills_pro')),('Compétences personnelles',profile.get('skills_perso')),('Présentation',profile.get('presentation')),('Résultats attendus',profile.get('objectives')),('Public visé',profile.get('audience')),('Piliers',list(db.PILLARS.values()))] if v)
-        text+='\n\n## Profil (onglet Personnalisation)\n'+(prof or 'Non renseigné.')
-        refs=[p for p in all_posts if p['status']=='Publié' and p['body'].strip()][-3:]
-        if skill in ai.PERSONAL_WRITING and refs:
-            text+='\n\n## Posts déjà publiés (références de style, ne pas recopier leurs faits)\n\n'+'\n\n---\n\n'.join(p['body'][:2500] for p in refs)
-        if attached: text+='\n\n## Éléments joints par l’utilisateur\n\n'+'\n\n'.join(pool[k][1] for k in attached)
-        return text
-
-    def proof_picker(prefix):
-        """Piocher une preuve chiffrée dans le profil de voix (section Proof I can use)."""
-        found=rd.proofs(voice_text)
-        if not found: return
-        c1,c2=st.columns([4,1])
-        pick=c1.selectbox('Piocher une preuve dans mon profil',range(len(found)),format_func=lambda n:found[n][:120],key=prefix+'-proof-pick')
-        if c2.button('Utiliser',key=prefix+'-proof-use'):
-            st.session_state[prefix+'-preuve']=found[pick];st.rerun()
+        return build_context(skill,'\n\n'.join(pool[k][1] for k in attached))
 
     def save_buttons(text,key,origin):
         a,c=st.columns(2)
@@ -562,19 +636,27 @@ elif page=='Assistant LinkedIn':
 
 elif page=='Idées de posts':
     st.write('Notez une idée dès qu’elle arrive, même en vrac. Elle reste un brouillon jusqu’à ce que vous la transformiez en publication.')
-    with st.form('quick-idea',clear_on_submit=True):
+    def _save_quick_idea():
+        ss=st.session_state; content=ss.get('qi-content','')
+        try:
+            db.save_item('ideas',db.new_idea(ss.get('qi-title','').strip() or (ss.get('qi-note','').strip().split('\n')[0][:90]),ss.get('qi-note',''),ss.get('qi-pillar','A'),url=ss.get('qi-url','').strip(),content_id=content,source=content_label.get(content,'').strip()))
+            for k in ('qi-title','qi-note','qi-url','improved-qi-note'): ss.pop(k,None)
+            ss['notice']='Idée notée.'
+        except ValueError as e: ss['qi-error']=str(e)
+    with st.container(border=True):
+        st.markdown('**Noter une idée**')
+        spoken=dic.dictee('dictee-idee','Dicter mon idée')
+        if spoken: dic.ajouter('qi-note',spoken)
         c1,c2=st.columns([3,1])
-        title=c1.text_input('Mon idée en une phrase')
-        pillar=c2.selectbox('Pilier',list(db.PILLARS),format_func=lambda x:db.PILLARS[x])
-        note=st.text_area('Notes en vrac : anecdote, chiffre, question, angle…',height=120)
+        c1.text_input('Mon idée en une phrase',key='qi-title',placeholder='Facultatif : la première ligne de vos notes sert de titre.')
+        c2.selectbox('Pilier',list(db.PILLARS),format_func=lambda x:db.PILLARS[x],key='qi-pillar')
+        st.text_area('Notes en vrac : anecdote, chiffre, question, angle…',height=140,key='qi-note',placeholder='Tapez ou dictez : ce qui s’est passé, ce que vous en pensez, ce que vous feriez.')
         c1,c2=st.columns(2)
-        content=c1.selectbox('Contenu qui l’inspire',['']+list(content_label),format_func=lambda x:content_label.get(x,'Aucun'))
-        url=c2.text_input('Lien utile')
-        if st.form_submit_button('Noter l’idée',type='primary'):
-            try:
-                db.save_item('ideas',db.new_idea(title,note,pillar,url=url.strip(),content_id=content,source=content_label.get(content,'').strip()))
-                st.session_state['notice']='Idée notée.';st.rerun()
-            except ValueError as e: st.error(str(e))
+        c1.selectbox('Contenu qui l’inspire',['']+list(content_label),format_func=lambda x:content_label.get(x,'Aucun'),key='qi-content')
+        c2.text_input('Lien utile',key='qi-url')
+        st.button('Noter l’idée',type='primary',on_click=_save_quick_idea,key='qi-save')
+        if st.session_state.get('qi-error'): st.error(st.session_state.pop('qi-error'))
+        improve_panel('qi-note','idée')
     c1,c2=st.columns([2,1])
     shown=c1.multiselect('Statuts affichés',db.IDEA_STATUSES,default=db.IDEA_STATUSES[:3])
     q=c2.text_input('Rechercher',key='idea-q')

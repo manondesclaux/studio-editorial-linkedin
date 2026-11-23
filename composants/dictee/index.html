@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --marron:#6B4A33; --noir:#1C1A17; --beige:#F4EEE4; --beige-fonce:#E2D3BD; --blanc:#FFFFFF; }
+  body { margin:0; font-family:"Source Sans Pro","Source Sans 3",system-ui,sans-serif; color:var(--noir); background:transparent; }
+  .ligne { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  button { font:inherit; font-size:14px; border-radius:8px; padding:6px 14px; cursor:pointer; border:1px solid var(--marron); background:var(--blanc); color:var(--marron); }
+  button.actif { background:var(--marron); color:var(--blanc); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .etat { font-size:13px; color:var(--marron); }
+  .apercu { margin-top:6px; font-size:13px; font-style:italic; color:var(--noir); opacity:.8; }
+  .point { display:inline-block; width:8px; height:8px; border-radius:50%; background:#B03A2E; margin-right:4px; animation:clignote 1s infinite; }
+  @keyframes clignote { 50% { opacity:.2; } }
+</style>
+</head>
+<body>
+<div class="ligne">
+  <button id="bouton" type="button">🎙️ Dicter</button>
+  <span id="etat" class="etat"></span>
+</div>
+<div id="apercu" class="apercu"></div>
+<script>
+// Protocole des composants Streamlit (v1) : prêt, rendu, valeur, hauteur.
+const envoyer = (type, donnees) => window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type }, donnees), "*");
+const hauteur = () => envoyer("streamlit:setFrameHeight", { height: document.body.scrollHeight + 4 });
+
+const bouton = document.getElementById("bouton");
+const etat = document.getElementById("etat");
+const apercu = document.getElementById("apercu");
+const Reconnaissance = window.SpeechRecognition || window.webkitSpeechRecognition;
+let reco = null, enCours = false, texteFinal = "";
+
+window.addEventListener("message", (ev) => {
+  if (ev.data && ev.data.type === "streamlit:render") {
+    const args = ev.data.args || {};
+    if (!enCours && args.label) bouton.textContent = "🎙️ " + args.label;
+    hauteur();
+  }
+});
+
+if (!Reconnaissance) {
+  bouton.disabled = true;
+  etat.textContent = "Dictée indisponible dans ce navigateur : utilisez le micro du clavier (iPhone, Android) ou Chrome, Edge ou Safari.";
+} else {
+  bouton.addEventListener("click", () => enCours ? arreter() : demarrer());
+}
+
+function demarrer() {
+  texteFinal = ""; apercu.textContent = "";
+  reco = new Reconnaissance();
+  reco.lang = "fr-FR"; reco.continuous = true; reco.interimResults = true;
+  reco.onresult = (ev) => {
+    let provisoire = "";
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const r = ev.results[i];
+      if (r.isFinal) texteFinal += r[0].transcript + " "; else provisoire += r[0].transcript;
+    }
+    apercu.textContent = (texteFinal + provisoire).trim();
+    hauteur();
+  };
+  reco.onerror = (ev) => {
+    const messages = { "not-allowed": "Micro refusé : autorisez-le dans le navigateur.", "no-speech": "Aucune parole détectée.", "network": "Connexion nécessaire pour la dictée." };
+    etat.textContent = messages[ev.error] || ("Dictée interrompue (" + ev.error + ").");
+  };
+  reco.onend = () => {
+    // Certains navigateurs coupent après un silence : on relance tant que la personne n'a pas cliqué sur Arrêter.
+    if (enCours) { try { reco.start(); return; } catch (e) {} }
+    terminer();
+  };
+  try { reco.start(); } catch (e) { etat.textContent = "Impossible de démarrer la dictée."; return; }
+  enCours = true;
+  bouton.classList.add("actif"); bouton.textContent = "⏹ Arrêter et ajouter";
+  etat.innerHTML = '<span class="point"></span>Je vous écoute…';
+  hauteur();
+}
+
+function arreter() { enCours = false; if (reco) reco.stop(); }
+
+function terminer() {
+  bouton.classList.remove("actif"); bouton.textContent = "🎙️ Dicter";
+  const texte = texteFinal.trim();
+  if (texte) {
+    etat.textContent = "Texte ajouté.";
+    envoyer("streamlit:setComponentValue", { value: { id: Date.now(), text: texte }, dataType: "json" });
+  } else if (!etat.textContent.startsWith("Micro") && !etat.textContent.startsWith("Aucune")) {
+    etat.textContent = "";
+  }
+  apercu.textContent = "";
+  hauteur();
+}
+
+envoyer("streamlit:componentReady", { apiVersion: 1 });
+hauteur();
+</script>
+</body>
+</html>

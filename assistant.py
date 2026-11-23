@@ -75,6 +75,21 @@ Réponds avec un bloc ```FR prêt à copier, puis une courte note sur les choix 
 {draft}'''
 
 
+IMPROVE_DRAFT = '''Voici mon brouillon de post LinkedIn, écrit ou dicté à l’oral : il peut contenir des répétitions, des tics de langage et des phrases inachevées. Transforme-le en post abouti en appliquant le skill redaction-post-linkedin et li-human, à partir de ce que je dis, sans rien ajouter de factuel.
+Règles non négociables :
+- Garde chaque fait, chiffre, lieu et citation de mon brouillon ; n’en invente aucun. Une preuve ou une transposition qui manque devient {{{{à compléter}}}}.
+- Ma valeur ajoutée doit se voir : mon point de vue, ce que je ferais, une preuve de ce que j’ai accompli (tirée du brouillon ou du profil), ce que j’apporterais dans le poste visé.
+- Accroche de 140 caractères au plus, thèse de 15 mots au plus, une seule question finale, vouvoiement du lecteur, 3 hashtags au plus, aucun lien, aucun tiret cadratin.
+Réponds avec un bloc ```FR prêt à copier, une ligne « Visuel : … », puis une courte note : ce que tu as gardé, ce que tu as reformulé, ce qui reste à compléter.
+
+## Mon brouillon
+{draft}'''
+
+
+def improve_draft_request(draft):
+    return IMPROVE_DRAFT.format(draft=draft.strip())
+
+
 def improve_story_request(draft, data):
     ingredients = '\n'.join(f'- {k} : {v.strip()}' for k, v in data.items() if v and v.strip())
     return IMPROVE_STORY.format(ingredients=ingredients, draft=draft)

@@ -6,20 +6,16 @@ Conçu par [Manon Desclaux](https://github.com/manondesclaux) pour son propre us
 
 ## Ce que fait le studio
 
-| Onglet | À quoi il sert |
+| Menu | À quoi il sert |
 |---|---|
-| **Personnalisation** | Votre profil : métiers (plusieurs possibles), centres d’intérêt, compétences professionnelles et personnelles, présentation, résultats attendus, public visé et vos cinq piliers éditoriaux. L’assistant s’en sert pour adapter les posts. |
-| **Mon compte LinkedIn** | Relier votre compte LinkedIn (nom, photo) pour publier un post depuis le studio, et accéder à l’import de vos statistiques. |
-| **Calendrier** | Vos publications par jour, date du jour surlignée, vue mobile en agenda. |
-| **Publications** | Liste, tableau de production et galerie ; texte, accroches, photo, notes, statut, mesures, bouton « Publier sur LinkedIn ». |
-| **Assistant LinkedIn** | **Récit d’expérience** (méthode du skill `redaction-post-linkedin` : accroche, problème, compétence transférable, propositions, nuance, question), **formules d’accroche** (21 formules de `li-post`), amélioration et conversation avec Claude, vérification anti-« texte IA », profil de voix. Les deux rédacteurs fonctionnent sans IA. |
-| **Idées de posts** | Noter une idée en vrac, la retravailler, la transformer en publication. |
-| **Contenus consommés** | Podcasts, vidéos, livres, articles ; un lien partagé depuis YouTube, Spotify ou Apple Podcasts crée la fiche tout seul. |
-| **GitHub** | Vos dépôts deviennent des idées de posts sur ce que vous avez réalisé. |
-| **Impact LinkedIn** | Import de l’export officiel de vos statistiques (XLSX ou CSV), taux d’engagement, évolution. |
-| **Benchmark international** | 30 créateurs produit observés (France / États-Unis) comme source d’inspiration, avec vos favoris et notes. |
-| **Sujets & stratégie** | Positionnement, piliers et répartition de vos posts. |
-| **Sauvegardes** | Export ZIP, JSON et CSV de toutes vos données. |
+| **Accueil** | Vos chiffres clés et les prochaines publications. |
+| **Écrire · Idées** | Noter une idée en vrac, au clavier ou en **dictée vocale**, puis la faire réécrire par Claude selon vos règles (« Améliorer avec Claude »). |
+| **Écrire · Publications** | Liste, tableau de production et galerie ; bouton « ＋ Nouvelle publication » ; dans chaque fiche : dictée, « Améliorer avec Claude », photo, statut, mesures, « Publier sur LinkedIn ». |
+| **Écrire · Assistant IA** | Récit d’expérience et formules d’accroche (sans IA), conversation avec les skills LinkedIn, vérification anti-« texte IA », profil de voix. |
+| **Planifier · Calendrier** | Vos publications par jour, date du jour surlignée, agenda sur téléphone. |
+| **S’inspirer · Inspirations** | Onglets Contenus consommés (liens partagés depuis le téléphone), GitHub, Benchmark de 30 créateurs, Sujets & stratégie. |
+| **Mesurer · Statistiques** | Onglets Impact des posts (import de l’export LinkedIn) et Compte LinkedIn (connexion, publication). |
+| **⚙ Réglages** | Onglets Profil (métiers, compétences, objectifs, piliers) et Sauvegardes. |
 
 ## Démarrer en local (5 minutes)
 
@@ -36,6 +32,10 @@ python3 -m venv .venv
 Ouvrez http://localhost:8501, puis suivez l’accueil : **Personnalisation**, **Mon compte LinkedIn**, puis **Assistant LinkedIn**. Sur Mac, un double-clic sur `lancer.command` fait la même chose.
 
 Sans autre réglage, les données sont enregistrées dans `data/personnel/` (base SQLite), sur votre ordinateur uniquement.
+
+## Dictée vocale
+
+Le bouton « 🎙️ Dicter » utilise la reconnaissance vocale du navigateur (Chrome, Edge, Safari), en français. Chrome et Edge envoient l’audio à leur service de reconnaissance pour le transcrire. Sur téléphone, le micro du clavier fonctionne aussi dans tous les champs.
 
 ## Réglages facultatifs
 
