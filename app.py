@@ -8,7 +8,6 @@ import re
 import time as _time
 from datetime import date, datetime, time, timedelta
 from html import escape
-from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 import os
 import streamlit as st
@@ -59,10 +58,18 @@ a,a:visited{color:var(--marron)!important;text-decoration:underline;text-underli
 [data-testid="stMetric"]{background:var(--blanc);padding:16px;border-radius:14px;border:1px solid var(--beige-fonce)}
 [data-testid="stMetricValue"]{color:var(--marron)}
 [data-testid="stExpander"],[data-testid="stVerticalBlockBorderWrapper"]{background:var(--blanc)}
-.calendar-day{background:var(--blanc);min-height:142px;padding:10px;border-radius:12px;border:1px solid var(--beige-fonce);margin-bottom:10px}
-.calendar-day a{display:block;background:var(--beige);border-left:3px solid var(--marron);padding:7px;margin-top:7px;font-size:13px;border-radius:4px}
-.calendar-day.today{border:2px solid var(--marron);background:var(--beige-fonce);box-shadow:0 0 0 3px rgba(107,74,51,.15)} .calendar-day.today a{background:var(--blanc)} .today-badge{display:block;width:fit-content;max-width:100%;margin-top:4px;background:var(--marron);color:var(--blanc);border-radius:10px;padding:1px 7px;font-size:11px;font-weight:600;line-height:1.3;white-space:normal;overflow-wrap:anywhere}
-.calendar-day.muted{opacity:.4} .month-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px} .month-grid a{overflow-wrap:anywhere} .agenda-mobile{display:none} @media(max-width:700px){.month-grid{display:none}.agenda-mobile{display:block}} .label{color:var(--marron);font-size:12px;text-transform:uppercase;letter-spacing:.1em}
+.today-badge{display:block;width:fit-content;max-width:100%;margin-top:4px;background:var(--marron);color:var(--blanc);border-radius:10px;padding:1px 7px;font-size:11px;font-weight:600;line-height:1.3;white-space:normal;overflow-wrap:anywhere}
+.label{color:var(--marron);font-size:12px;text-transform:uppercase;letter-spacing:.1em}
+button[data-testid="stBaseButton-tertiary"]{color:var(--marron)!important;text-decoration:underline;text-underline-offset:2px;padding:0!important;min-height:0!important;text-align:left;justify-content:flex-start}
+button[data-testid="stBaseButton-tertiary"]:hover{color:var(--noir)!important}
+button[data-testid="stBaseButton-tertiary"] p{text-align:left}
+[class*="st-key-cal-day-"],[class*="st-key-cal-muted-"],.st-key-cal-today{background:var(--blanc);min-height:142px;padding:8px 10px;border-radius:12px;border:1px solid var(--beige-fonce);gap:.3rem}
+[class*="st-key-cal-muted-"]{opacity:.4}
+.st-key-cal-today{border:2px solid var(--marron);background:var(--beige-fonce);box-shadow:0 0 0 3px rgba(107,74,51,.15)}
+[class*="st-key-cal-"] button[data-testid="stBaseButton-tertiary"] p{word-break:normal;overflow-wrap:break-word;hyphens:auto}
+[class*="st-key-cal-"] button[data-testid="stBaseButton-tertiary"]{font-size:13px;background:var(--beige)!important;border-left:3px solid var(--marron)!important;border-radius:4px;padding:5px 7px!important;width:100%;text-decoration:none}
+.st-key-cal-today button[data-testid="stBaseButton-tertiary"]{background:var(--blanc)!important}
+.st-key-cal-agenda{display:none} @media(max-width:700px){.st-key-cal-grid{display:none}.st-key-cal-agenda{display:block}}
 .tag{display:inline-block;background:var(--beige-fonce);color:var(--noir);border-radius:10px;padding:1px 9px;margin:0 4px 4px 0;font-size:12px}
 </style>''',unsafe_allow_html=True)
 PAGES=['Vue d’ensemble','Personnalisation','Mon compte LinkedIn','Calendrier','Publications','Nouvelle publication','Assistant LinkedIn','Idées de posts','Contenus consommés','GitHub','Impact LinkedIn','Benchmark international','Sujets & stratégie','Sauvegardes']
@@ -86,11 +93,12 @@ def goto(page,post=None):
     if post: st.query_params['post']=post
     st.rerun()
 
-def href(page,post=None):
-    return '?'+urlencode(dict(page=page,**({'post':post} if post else {})))
+def _open_post(pid):
+    st.query_params.clear(); st.query_params['page']='Publications'; st.query_params['post']=pid
 
-def post_link(p):
-    return '<a target="_self" href="'+escape(href('Publications',p['id']),quote=True)+'">'+escape(p['title'])+'</a>'
+def post_button(p,key,label=None):
+    """Lien vers une publication sans recharger le navigateur : la session (et le mot de passe) est conservée."""
+    st.button(label or p['title'],key=f'open-{key}-{p["id"]}',on_click=_open_post,args=(p['id'],),type='tertiary')
 
 def flash():
     msg=st.session_state.pop('notice',None)
@@ -179,7 +187,7 @@ if page=='Vue d’ensemble':
     for p in upcoming:
         with st.container(border=True):
             st.caption(f"{DAYS[date.fromisoformat(p['date']).weekday()]} {date.fromisoformat(p['date']).strftime('%d/%m/%Y')} · {p['time']} Paris · {p['platform']} · {p['status']}")
-            st.markdown(post_link(p),unsafe_allow_html=True)
+            post_button(p,'next')
             st.write(p['body'][:180]+('…' if len(p['body'])>180 else ''))
     st.info('Ouvrez une fiche pour modifier le texte et ajouter une photo. Le passage au statut Publié sert au suivi ; vous publiez vous-même sur la plateforme.')
 
@@ -191,25 +199,30 @@ elif page=='Calendrier':
     month=c3.selectbox('Mois',range(1,13),index=TODAY.month-1,format_func=lambda x:MONTHS[x-1])
     essentials=st.checkbox('Afficher seulement les posts essentiels')
     selected=[p for p in all_posts if (platform=='Toutes' or p['platform']==platform) and (not essentials or p['priority']=='Essentiel')]
-    html='<div class="month-grid">'+''.join('<b>'+d+'</b>' for d in DAYS)
-    for week in calendar.Calendar().monthdatescalendar(int(year),month):
-        for day in week:
-            cards=[p for p in selected if p.get('date')==day.isoformat()]
-            html+='<div class="calendar-day'+(' muted' if day.month!=month else '')+(' today' if day==TODAY else '')+'"><b>'+str(day.day)+'</b>'+('<span class="today-badge">Aujourd’hui</span>' if day==TODAY else '')
-            for p in cards: html+=post_link(dict(p,title=f"{p['time']} · {p['title']}"))+'<span class="label">'+escape(p['status'])+'</span>'
-            html+='</div>'
-    html+='</div><div class="agenda-mobile">'
-    mobile=[p for p in selected if p.get('date') and p['date'].startswith(f'{int(year):04d}-{month:02d}')]
-    for p in mobile:
-        d=date.fromisoformat(p['date'])
-        html+='<div class="calendar-day'+(' today' if d==TODAY else '')+'"><b>'+DAYS[d.weekday()]+' '+d.strftime('%d/%m')+' · '+escape(p['time'])+'</b>'+post_link(p)+'<span class="label">'+escape(p['status'])+'</span></div>'
-    html+=('</div>' if mobile else 'Aucun post prévu ce mois-ci.</div>')
-    st.markdown(html,unsafe_allow_html=True)
+    weeks=calendar.Calendar().monthdatescalendar(int(year),month)
+    with st.container(key='cal-grid'):
+        for col,name in zip(st.columns(7,gap='small'),DAYS): col.markdown(f'**{name}**')
+        for week in weeks:
+            for col,day in zip(st.columns(7,gap='small'),week):
+                kind='cal-today' if day==TODAY else ('cal-muted-' if day.month!=month else 'cal-day-')+day.isoformat()
+                with col.container(key=kind):
+                    st.markdown(f'**{day.day}**'+(' <span class="today-badge">Aujourd’hui</span>' if day==TODAY else ''),unsafe_allow_html=True)
+                    for p in [p for p in selected if p.get('date')==day.isoformat()]:
+                        post_button(p,'grid',f"{p['time']} · {p['title']}")
+                        st.markdown(f'<span class="label">{escape(p["status"])}</span>',unsafe_allow_html=True)
+    with st.container(key='cal-agenda'):
+        mobile=[p for p in selected if p.get('date') and p['date'].startswith(f'{int(year):04d}-{month:02d}')]
+        if not mobile: st.caption('Aucun post prévu ce mois-ci.')
+        for p in mobile:
+            d=date.fromisoformat(p['date'])
+            with st.container(border=True):
+                st.markdown(f"**{DAYS[d.weekday()]} {d.strftime('%d/%m')} · {escape(p['time'])}**"+(' <span class="today-badge">Aujourd’hui</span>' if d==TODAY else ''),unsafe_allow_html=True)
+                post_button(p,'agenda'); st.caption(p['status'])
     st.caption('Cliquez sur un titre pour ouvrir sa page. Dates et horaires modifiables dans chaque fiche ; fuseau Europe/Paris.')
     undated=[p for p in selected if not p.get('date')]
     if undated:
         st.subheader('À planifier')
-        for p in undated: st.markdown(post_link(p),unsafe_allow_html=True)
+        for p in undated: post_button(p,'undated')
 
 elif page in ['Publications','Nouvelle publication']:
     pid=st.query_params.get('post')
@@ -228,7 +241,7 @@ elif page in ['Publications','Nouvelle publication']:
                     for p in chosen:
                         if p['status']==s:
                             with st.container(border=True):
-                                st.markdown(post_link(p),unsafe_allow_html=True);st.caption(p['date'] or 'À planifier')
+                                post_button(p,'board');st.caption(p['date'] or 'À planifier')
         elif view=='Galerie':
             cols=st.columns(3)
             for i,p in enumerate(chosen):
@@ -236,11 +249,11 @@ elif page in ['Publications','Nouvelle publication']:
                     photo=db.photo_bytes(p.get('photo',''))
                     if photo: st.image(photo,width='stretch')
                     else: st.caption('Photo à ajouter · facultative')
-                    st.markdown(post_link(p),unsafe_allow_html=True);st.caption(p['status'])
+                    post_button(p,'gallery');st.caption(p['status'])
         else:
             for p in chosen:
                 with st.container(border=True):
-                    st.markdown(post_link(p),unsafe_allow_html=True)
+                    post_button(p,'list')
                     st.caption(f"{p.get('date') or 'À planifier'} · {p['time']} · {p['platform']} · {p['status']} · {p['priority']}")
         if not chosen: st.info('Aucune publication ne correspond à ces filtres.')
     else:
@@ -584,7 +597,8 @@ elif page=='Idées de posts':
                     except ValueError as e: st.error(str(e))
             post=next((p for p in all_posts if p['id']==idea.get('post_id')),None)
             c1,c2=st.columns(2)
-            if post: c1.markdown('Publication liée : '+post_link(post),unsafe_allow_html=True)
+            if post:
+                with c1: st.caption('Publication liée :'); post_button(post,'idea-'+idea['id'])
             elif c1.button('Transformer en publication',key='to-post-'+idea['id'],type='primary'): idea_to_post(idea)
             if c2.button('Supprimer cette idée',key='del-'+idea['id']):
                 db.delete_item('ideas',idea['id']);st.session_state['notice']='Idée supprimée.';st.rerun()
@@ -736,7 +750,9 @@ elif page=='Impact LinkedIn':
     waiting=[p for p in all_posts if p['status']=='Publié' and not p.get('stats_updated')]
     if waiting:
         st.subheader('Publiés, en attente de statistiques')
-        for p in waiting: st.markdown(post_link(p)+(' · lien LinkedIn à ajouter' if not p.get('published_url') else ''),unsafe_allow_html=True)
+        for p in waiting:
+            post_button(p,'waiting')
+            if not p.get('published_url'): st.caption('Lien LinkedIn à ajouter')
 
 elif page=='Personnalisation':
     st.write('Présentez-vous. Le studio et l’IA s’en servent pour adapter les idées, les posts et les analyses à votre profil.')
