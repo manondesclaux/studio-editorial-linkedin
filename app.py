@@ -66,7 +66,7 @@ a,a:visited{color:var(--marron)!important;text-decoration:underline;text-underli
 </style>''',unsafe_allow_html=True)
 PAGES=['Vue d’ensemble','Personnalisation','Mon compte LinkedIn','Calendrier','Publications','Nouvelle publication','Assistant LinkedIn','Idées de posts','Contenus consommés','GitHub','Impact LinkedIn','Benchmark international','Sujets & stratégie','Sauvegardes']
 SUGGESTIONS=dict(
-    metiers=['Product Owner','Product Manager','Chef de projet IT','UX designer','Data analyst','Consultant','Entrepreneur','Freelance','Développeur','Marketing','Recruteur'],
+    metiers=['Product Owner','Product Manager','Product builder','Business analyst','Chef de projet IT','UX designer','Data analyst','Consultant','Entrepreneur','Freelance','Développeur','Marketing','Recruteur'],
     interests=['Produit','IA','Design','Data','Entrepreneuriat','Management','Tech','Marketing','Écologie','Sport','Voyage','Lecture'],
     skills_pro=['Discovery','Priorisation','Gestion de projet','Analyse de données','UX','Prototypage','Facilitation','Négociation','Rédaction','SQL','Python','Figma'],
     skills_perso=['Écoute','Curiosité','Rigueur','Créativité','Pédagogie','Autonomie','Esprit d’équipe','Adaptabilité','Leadership','Persévérance'])
